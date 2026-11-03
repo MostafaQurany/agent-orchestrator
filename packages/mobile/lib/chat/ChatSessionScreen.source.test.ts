@@ -8,10 +8,12 @@ const actionsSheetSource = readFileSync(new URL("./ConversationActionsSheet.tsx"
 
 describe("active turn controls", () => {
 	it("remounts the composer when a same-ID session changes host", () => {
-		expect(screenSource).toContain('const composerKey = config ? JSON.stringify([machineIdentity(config), session.id]) : session.id;');
+		// Keyed by the machine, not the connection: an app switch drops `config`
+		// and must not remount the composer (the resume flicker).
+		expect(screenSource).toContain('const composerKey = JSON.stringify([machine, session.id]);');
 		expect(screenSource).toContain('key={composerKey}');
 		expect(screenSource).toContain('quoteRequest?.composerKey === composerKey ? quoteRequest : undefined');
-		expect(composerSource).toContain('`ao.chat.draft.${machineIdentity(config)}.${sessionId}`');
+		expect(composerSource).toContain('`ao.chat.draft.${machine}.${sessionId}`');
 		expect(composerSource).toContain('if (!draftKey || !draftLoaded) return;');
 	});
 
@@ -92,7 +94,7 @@ describe("active turn controls", () => {
 		expect(screenSource).toContain("reviewRouteForPR(session.id, reviewPromptPR, currentHostId)");
 		expect(screenSource).toContain("reviewRouteForSession(session, currentHostId)");
 		expect(screenSource).toContain("encodeURIComponent(reviewPromptHostKey)");
-		expect(screenSource).toContain("reviewSummaries.summaryFor(config, session.id, reviewPromptPR.number)");
+		expect(screenSource).toContain("reviewSummaries.summaryFor(summaryConfig, session.id, reviewPromptPR.number)");
 		expect(screenSource).toContain("<ChatComposer");
 	});
 });
