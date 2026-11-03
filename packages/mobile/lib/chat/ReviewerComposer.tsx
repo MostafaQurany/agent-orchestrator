@@ -1,7 +1,7 @@
 import { Feather } from "../icons";
 import * as DocumentPicker from "expo-document-picker";
 import * as ImagePicker from "expo-image-picker";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ActivityIndicator, Image, Pressable, ScrollView, Text, TextInput, View } from "react-native";
 import Animated, { useAnimatedStyle } from "react-native-reanimated";
 import { useReanimatedKeyboardAnimation } from "react-native-keyboard-controller";
@@ -14,6 +14,7 @@ import { MicKey } from "../voice/MicKey";
 import { useVoiceInput } from "../voice/useVoiceInput";
 import { ChatAttachmentMenu } from "./ChatAttachmentMenu";
 import { ComposerGlass } from "./composer-glass";
+import { HardwareReturn } from "./HardwareReturn";
 import { COMPOSER_FIELD_HEIGHT, COMPOSER_FIELD_MAX_HEIGHT, COMPOSER_RADIUS, composerStyleRules } from "./composerStyles";
 import type { ChatImage, ChatResource } from "./types";
 import { forgetComposerAttachments, readComposerAttachments, updateComposerAttachments, useComposerAttachments, type ComposerAttachment as Attachment } from "./composerAttachments";
@@ -45,6 +46,14 @@ export function ReviewerComposer({ attachmentKey, busy, stopped, attachmentsEnab
 	const clearAttachments = useCallback(() => updateComposerAttachments(attachmentKey, () => ({ items: [] })), [attachmentKey]);
 	const dismissAttachmentNotice = useCallback(() => updateComposerAttachments(attachmentKey, (current) => current.notice ? { items: current.items } : current), [attachmentKey]);
 	const [submitting, setSubmitting] = useState(false);
+	const inputRef = useRef<TextInput>(null);
+	// See ChatComposer: a hardware-keyboard send returns to the field once it is editable again.
+	const refocusAfterSubmit = useRef(false);
+	useEffect(() => {
+		if (submitting || !refocusAfterSubmit.current) return;
+		refocusAfterSubmit.current = false;
+		inputRef.current?.focus();
+	}, [submitting]);
 	const [error, setError] = useState("");
 	const [fieldHeight, setFieldHeight] = useState(COMPOSER_FIELD_HEIGHT);
 	const keyboard = useReanimatedKeyboardAnimation();
@@ -98,8 +107,9 @@ export function ReviewerComposer({ attachmentKey, busy, stopped, attachmentsEnab
 		}
 	};
 
-	const submit = async () => {
+	const submit = async (from: "button" | "keyboard" = "button") => {
 		if (submitting || stopped || (!text.trim() && !attachments.length)) return;
+		if (from === "keyboard") refocusAfterSubmit.current = true;
 		// Only what this send submitted; see ChatComposer.
 		const sentKey = attachmentKey;
 		const sent = new Set(attachments.map((item) => item.id));
@@ -129,25 +139,29 @@ export function ReviewerComposer({ attachmentKey, busy, stopped, attachmentsEnab
 			<ComposerGlass radius={COMPOSER_RADIUS} />
 			<View style={styles.composerRow}>
 				<ChatAttachmentMenu disabled={stopped || submitting || !attachmentsEnabled} canAttachFile onChoosePhoto={() => void addPhoto()} onChooseFile={() => void addFile()} />
-				<TextInput
-					onLayout={pasteLayout}
-					accessibilityLabel="Reply to reviewer"
-					value={text}
-					onChangeText={setText}
-					onContentSizeChange={(event) => {
-						// Native contentSize already includes the field's vertical padding,
-						// as in ChatComposer.
-						const contentHeight = Math.ceil(event.nativeEvent.contentSize.height);
-						setFieldHeight(Math.max(COMPOSER_FIELD_HEIGHT, Math.min(COMPOSER_FIELD_MAX_HEIGHT, contentHeight)));
-					}}
-					placeholder={stopped ? "Reviewer is stopped" : "Reply to reviewer…"}
-					placeholderTextColor={t.textFaint}
-					{...textSelectionColors(t)}
-					multiline
-					maxLength={40_000}
-					editable={!stopped && !submitting}
-					style={[styles.input, { height: text ? fieldHeight : COMPOSER_FIELD_HEIGHT }]}
-				/>
+				{/* Return on a hardware keyboard sends; Cmd/Ctrl have no steer to pick here. */}
+				<HardwareReturn style={styles.inputSlot} enabled={!stopped && !submitting && !busy} onReturn={() => { void submit("keyboard"); }}>
+					<TextInput
+						ref={inputRef}
+						onLayout={pasteLayout}
+						accessibilityLabel="Reply to reviewer"
+						value={text}
+						onChangeText={setText}
+						onContentSizeChange={(event) => {
+							// Native contentSize already includes the field's vertical padding,
+							// as in ChatComposer.
+							const contentHeight = Math.ceil(event.nativeEvent.contentSize.height);
+							setFieldHeight(Math.max(COMPOSER_FIELD_HEIGHT, Math.min(COMPOSER_FIELD_MAX_HEIGHT, contentHeight)));
+						}}
+						placeholder={stopped ? "Reviewer is stopped" : "Reply to reviewer…"}
+						placeholderTextColor={t.textFaint}
+						{...textSelectionColors(t)}
+						multiline
+						maxLength={40_000}
+						editable={!stopped && !submitting}
+						style={[styles.input, { height: text ? fieldHeight : COMPOSER_FIELD_HEIGHT }]}
+					/>
+				</HardwareReturn>
 				<MicKey variant="plain" size={44} glyphSize={iconSize.lg} disabled={stopped || submitting} state={voice.state} mode={voice.mode} onPressIn={voice.pressIn} onPressOut={voice.pressOut} />
 				{busy ? <Pressable accessibilityRole="button" accessibilityLabel="Stop reviewer" onPress={() => { haptics.tap(); void onInterrupt().catch((cause) => setError(cause instanceof Error ? cause.message : "Could not stop the reviewer.")); }} style={({ pressed }) => [styles.stop, pressed && { opacity: 0.8 }]}><Feather name="square" size={12} color={t.textPrimary} /></Pressable> : <Pressable accessibilityRole="button" accessibilityLabel="Send reply" accessibilityState={{ disabled: sendDisabled, busy: submitting }} disabled={sendDisabled} onPress={() => { haptics.tap(); void submit(); }} style={({ pressed }) => [styles.send, pressed && { opacity: 0.8 }, sendDisabled && { opacity: 0.35 }]}>{submitting ? <ActivityIndicator size="small" color={t.bgBase} /> : <Feather name="arrow-up" size={17} color={t.bgBase} />}</Pressable>}
 			</View>

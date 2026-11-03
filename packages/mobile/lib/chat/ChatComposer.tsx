@@ -29,7 +29,8 @@ import { ComposerGlass, composerGlassSupported } from "./composer-glass";
 import { COMPOSER_FIELD_HEIGHT, COMPOSER_FIELD_MAX_HEIGHT, COMPOSER_RADIUS, composerStyleRules } from "./composerStyles";
 import { ChatTurnSettingsControl } from "./ChatTurnSettingsControl";
 import { compactCount } from "../files/model";
-import { composerDeliveryPresentation, composerDeliveryRoute, composerPrimaryAction, type ComposerDeliveryIntent } from "./composerDeliveryModel";
+import { composerDeliveryPresentation, composerDeliveryRoute, composerPrimaryAction, hardwareReturnIntent, type ComposerDeliveryIntent } from "./composerDeliveryModel";
+import { HardwareReturn } from "./HardwareReturn";
 import { contextMeterModel } from "./contextMeter";
 import { RequestCard } from "./RequestCard";
 import type { RequestDockModel } from "./requestDockModel";
@@ -240,6 +241,14 @@ export function ChatComposer({
 	const dismissAttachmentNotice = useCallback(() => updateComposerAttachments(attachmentKey, (current) => current.notice ? { items: current.items } : current), [attachmentKey]);
 	const [localError, setLocalError] = useState<string>();
 	const [submitting, setSubmitting] = useState(false);
+	// Set when Return on a hardware keyboard sent: the field goes read-only while
+	// the send is in flight, and typing should carry on in it once it is back.
+	const refocusAfterSubmit = useRef(false);
+	useEffect(() => {
+		if (submitting || !refocusAfterSubmit.current) return;
+		refocusAfterSubmit.current = false;
+		inputRef.current?.focus();
+	}, [submitting]);
 	const [promotingQueuedTurnId, setPromotingQueuedTurnId] = useState<string>();
 	const [cancellingQueuedTurnId, setCancellingQueuedTurnId] = useState<string>();
 	const [hiddenQueuedTurnIds, setHiddenQueuedTurnIds] = useState<Set<string>>(() => new Set());
@@ -340,7 +349,7 @@ export function ChatComposer({
 
 	const voice = useVoiceInput({ onTranscript: useCallback((spoken: string) => setText((old) => old ? `${old} ${spoken}` : spoken), []) });
 
-	const submit = useCallback(async (intent: ComposerDeliveryIntent = "send") => {
+	const submit = useCallback(async (intent: ComposerDeliveryIntent = "send", from: "button" | "keyboard" = "button") => {
 		if (submitting || pending || disabled || (draftKey && !draftLoaded)) return;
 		const trimmed = responseReplyText(text, quotes);
 		if (!trimmed && attachments.length === 0) return;
@@ -351,7 +360,10 @@ export function ChatComposer({
 		// Dismissed on the tap, not after the send lands. Waiting for the request
 		// tied the keyboard's exit to the network, so it dropped whenever the
 		// answer arrived — which read as the keyboard being taken away mid-sentence.
-		Keyboard.dismiss();
+		// Return on a hardware keyboard keeps the field: the next message is typed
+		// straight after, as at a desk.
+		if (from === "keyboard") refocusAfterSubmit.current = true;
+		else Keyboard.dismiss();
 		setLocalError(undefined);
 		dismissAttachmentNotice();
 		setSubmitting(true);
@@ -592,32 +604,34 @@ export function ChatComposer({
 				</ScrollView> : null}
 				<View style={styles.composerRow}>
 					<ChatAttachmentMenu disabled={stopped || submitting} canAttachFile={Boolean(canEmbedFiles)} onChoosePhoto={() => void addImage()} onChooseFile={() => void addFile()} />
-					<TextInput
-						ref={inputRef}
-						onLayout={pasteLayout}
-						accessibilityLabel="Message the agent"
-						editable={!stopped && !submitting}
-						value={text}
-						onChangeText={(value) => { latestText.current = value; setText(value); }}
-						onSelectionChange={(event) => setCursor(event.nativeEvent.selection.start)}
-						onContentSizeChange={(event) => {
-							if (!latestText.current) {
-								setFieldHeight(COMPOSER_FIELD_HEIGHT);
-								return;
-							}
-							// Native contentSize already includes the TextInput's vertical
-							// padding. Treat it as the field's full height; converting it to
-							// lines counted the padding as an extra line on the first render.
-							const contentHeight = Math.ceil(event.nativeEvent.contentSize.height);
-							setFieldHeight(Math.max(COMPOSER_FIELD_HEIGHT, Math.min(COMPOSER_FIELD_MAX_HEIGHT, contentHeight)));
-						}}
-						placeholder={stopped ? "Agent is stopped" : startingAgentName ? `${startingAgentName} is starting…` : deliveryPresentation.placeholder}
-						placeholderTextColor={t.textFaint}
-						{...textSelectionColors(t)}
-						style={[styles.input, { height: text ? fieldHeight : COMPOSER_FIELD_HEIGHT }]}
-						multiline
-						maxLength={40_000}
-					/>
+					<HardwareReturn style={styles.inputSlot} enabled={!stopped && !submitting} onReturn={(modifiers) => { void submit(hardwareReturnIntent(modifiers), "keyboard"); }}>
+						<TextInput
+							ref={inputRef}
+							onLayout={pasteLayout}
+							accessibilityLabel="Message the agent"
+							editable={!stopped && !submitting}
+							value={text}
+							onChangeText={(value) => { latestText.current = value; setText(value); }}
+							onSelectionChange={(event) => setCursor(event.nativeEvent.selection.start)}
+							onContentSizeChange={(event) => {
+								if (!latestText.current) {
+									setFieldHeight(COMPOSER_FIELD_HEIGHT);
+									return;
+								}
+								// Native contentSize already includes the TextInput's vertical
+								// padding. Treat it as the field's full height; converting it to
+								// lines counted the padding as an extra line on the first render.
+								const contentHeight = Math.ceil(event.nativeEvent.contentSize.height);
+								setFieldHeight(Math.max(COMPOSER_FIELD_HEIGHT, Math.min(COMPOSER_FIELD_MAX_HEIGHT, contentHeight)));
+							}}
+							placeholder={stopped ? "Agent is stopped" : startingAgentName ? `${startingAgentName} is starting…` : deliveryPresentation.placeholder}
+							placeholderTextColor={t.textFaint}
+							{...textSelectionColors(t)}
+							style={[styles.input, { height: text ? fieldHeight : COMPOSER_FIELD_HEIGHT }]}
+							multiline
+							maxLength={40_000}
+						/>
+					</HardwareReturn>
 					<MicKey variant="plain" size={44} glyphSize={iconSize.lg} disabled={stopped || submitting} state={voice.state} mode={voice.mode} onPressIn={voice.pressIn} onPressOut={voice.pressOut} />
 					{primaryAction === "stop" ? <Pressable accessibilityRole="button" accessibilityLabel="Stop turn" accessibilityState={{ busy: interrupting, disabled: disabled || interrupting }} disabled={disabled || interrupting} onPress={() => { haptics.tap(); void onInterrupt(); }} style={[styles.stop, (disabled || interrupting) && { opacity: 0.55 }]}>{interrupting ? <ActivityIndicator size="small" color={t.textPrimary} /> : <Feather name="square" size={12} color={t.textPrimary} />}</Pressable> : <Pressable accessibilityRole="button" accessibilityLabel={active ? "Queue message" : "Send message"} accessibilityState={{ disabled: disabled || stopped || pending || submitting || Boolean(draftKey && !draftLoaded) }} disabled={disabled || stopped || pending || submitting || Boolean(draftKey && !draftLoaded) || (!hasDraft && attachments.length === 0)} onPress={() => { haptics.tap(); void submit("send"); }} style={({ pressed }) => [styles.send, pressed && { opacity: 0.8 }, (disabled || stopped || pending || submitting || Boolean(draftKey && !draftLoaded) || (!hasDraft && attachments.length === 0)) && { opacity: 0.35 }]}>{pending || submitting ? <ActivityIndicator size="small" color={t.bgBase} /> : <Feather name="arrow-up" size={17} color={t.bgBase} />}</Pressable>}
 				</View>

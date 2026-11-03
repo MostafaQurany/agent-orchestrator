@@ -41,6 +41,10 @@ export const composerStyleRules = (t: Theme) => StyleSheet.create({
 	// The native content-size event grows this from its one-line resting height;
 	// at the cap, the multiline field scrolls while the controls remain in place.
 	input: { fontFamily: "Geist_400Regular", flex: 1, minHeight: COMPOSER_FIELD_HEIGHT, maxHeight: COMPOSER_FIELD_MAX_HEIGHT, color: t.textPrimary, fontSize: type.subheadline.fontSize, lineHeight: COMPOSER_LINE_HEIGHT, paddingVertical: space.md, textAlignVertical: "top" },
+	// iOS wraps the field in `HardwareReturn`, which then holds the field's place in
+	// the row. A row of its own keeps the field's `flex: 1` on the horizontal axis,
+	// so the field still sets its own height.
+	inputSlot: { flex: 1, minWidth: 0, flexDirection: "row", alignItems: "flex-end" },
 	send: { width: 44, height: 44, borderRadius: 22, alignItems: "center", justifyContent: "center", backgroundColor: t.accent },
 	stop: { width: 44, height: 44, borderRadius: 22, alignItems: "center", justifyContent: "center", backgroundColor: t.bgSubtle, borderWidth: StyleSheet.hairlineWidth, borderColor: t.borderDefault },
 	attachments: { gap: space.xs, paddingBottom: space.xs },
