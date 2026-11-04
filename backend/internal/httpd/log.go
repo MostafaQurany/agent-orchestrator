@@ -65,6 +65,10 @@ func requestLoggerWithCapture(log *slog.Logger, sink ports.EventSink, captureHTT
 					if capErr != nil {
 						errorKind, errorCode = telemetrymeta.ErrorKindAndCode(capErr)
 					}
+					if errorCode == "" {
+						errorCode = captured.Code
+					}
+					errorType := telemetrymeta.ErrorType(capErr)
 					// Codex account management is absent for this process. The
 					// renderer holds one quiet stream instead of treating that
 					// expected condition as a fault. Other 5xx still go to
@@ -72,9 +76,19 @@ func requestLoggerWithCapture(log *slog.Logger, sink ports.EventSink, captureHTT
 					if errorCode == "CODEX_ACCOUNT_MANAGEMENT_UNAVAILABLE" {
 						return
 					}
-					// PostHog groups by route and error category. Sentry uses the
-					// recorded AO failure site when one is available.
-					fingerprint := telemetrymeta.Fingerprint("httpd", "http_request", r.Method, path, strconv.Itoa(ww.Status()), errorKind, errorCode)
+					// Group the same code or bounded cause type at a registered
+					// route together without using request or error text.
+					groupCode := errorCode
+					if groupCode == "" {
+						if errorType != "unknown" {
+							groupCode = errorType
+						}
+					}
+					if groupCode == "" {
+						groupCode = strconv.Itoa(ww.Status())
+					}
+					sentryFingerprint := telemetrymeta.Fingerprint("httpd", "http_request", r.Method, path, groupCode)
+					posthogFingerprint := telemetrymeta.Fingerprint("httpd", "http_request", r.Method, path, strconv.Itoa(ww.Status()), errorKind, errorCode)
 					if sink != nil {
 						payload := map[string]any{
 							"component":     "httpd",
@@ -87,10 +101,11 @@ func requestLoggerWithCapture(log *slog.Logger, sink ports.EventSink, captureHTT
 						}
 						if capErr != nil {
 							payload["error_kind"] = errorKind
+							payload["error_type"] = errorType
 							if errorCode != "" {
 								payload["error_code"] = errorCode
 							}
-							payload["fingerprint"] = fingerprint
+							payload["fingerprint"] = posthogFingerprint
 						}
 						for key, value := range captured.Fields {
 							payload[key] = value
@@ -121,7 +136,7 @@ func requestLoggerWithCapture(log *slog.Logger, sink ports.EventSink, captureHTT
 					// replaces error text before sending.
 					// 503 (transient contention) is excluded by ShouldCaptureStatus.
 					captureSentry := sentryobs.ShouldCaptureStatus(ww.Status())
-					if errorCode == "LINK_PREVIEW_FETCH_FAILED" && ww.Status() == http.StatusBadGateway {
+					if capErr != nil && errorCode == "LINK_PREVIEW_FETCH_FAILED" && ww.Status() == http.StatusBadGateway {
 						captureSentry = false
 					}
 					if captureSentry {
@@ -137,9 +152,10 @@ func requestLoggerWithCapture(log *slog.Logger, sink ports.EventSink, captureHTT
 							"status":     strconv.Itoa(ww.Status()),
 							"category":   "http_5xx",
 							"error_kind": errorKind,
+							"error_type": errorType,
 							"error_code": errorCode,
 							"area":       sentryobs.Area(capErr, errorCode),
-						}, fingerprint, route, captured.FailureSite)
+						}, sentryFingerprint, route, captured.FailureSite)
 					}
 				}
 			}()

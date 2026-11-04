@@ -72,6 +72,7 @@ const shellMocks = vi.hoisted(() => {
 			state.newShellTerminalListener = listener;
 			return vi.fn();
 		}),
+		openShellTerminalHost: vi.fn((_hostId?: string) => {}),
 		openShellTerminal: vi.fn((input: { projectId?: string; sessionId?: string }) => ({
 			handleId: "pending-shell:test",
 			projectId: input.projectId,
@@ -236,8 +237,11 @@ vi.mock("../hooks/useCloudOrg", () => ({
 // shortcut subscriptions, so the mutation is stubbed rather than driven.
 vi.mock("../hooks/useShellTerminals", () => ({
 	useShellTerminals: () => ({ data: [], isSuccess: true }),
-	useOpenShellTerminal: () => ({
-		open: shellMocks.openShellTerminal,
+	useOpenShellTerminal: (hostId?: string) => ({
+		open: (input: { projectId?: string; sessionId?: string }) => {
+			shellMocks.openShellTerminalHost(hostId);
+			return shellMocks.openShellTerminal(input);
+		},
 		mutate: shellMocks.openShellTerminal,
 	}),
 }));
@@ -251,15 +255,15 @@ vi.mock("../hooks/useAgentReadinessQuery", () => ({
 	useEnsureAgentReadiness: vi.fn(),
 }));
 
-vi.mock("../components/NotificationCenter", () => ({ NotificationRuntime: () => null }));
+vi.mock("../components/NotificationCenter", () => ({ NotificationRuntime: () => null, NotificationCenter: () => <button type="button" aria-label="Notifications" /> }));
 vi.mock("../components/HarnessUpdateNotice", () => ({ HarnessUpdateNotice: () => null }));
+vi.mock("../components/SessionTopbarActions", () => ({ SessionTopbarActions: () => null }));
 vi.mock("../components/DaemonStartupLoader", () => ({
 	DaemonStartupLoader: () => <div data-testid="daemon-startup-loader" />,
 }));
 vi.mock("../components/CommandPalette", () => ({ CommandPalette: () => null }));
 vi.mock("../components/OrchestratorReplacementDialog", () => ({ OrchestratorReplacementDialog: () => null }));
 vi.mock("../components/OpenShareLinkDialog", () => ({ ShareLinkHost: () => null }));
-vi.mock("../components/ShellTopbar", () => ({ ShellTopbar: () => null }));
 vi.mock("../components/TitlebarNav", async () => {
 	const { sidebarIsVisible, useUiStore: useStore } = await vi.importActual<
 		typeof import("../stores/ui-store")
@@ -415,6 +419,7 @@ beforeEach(() => {
 	shellMocks.onKeyboardShortcutsHelp.mockClear();
 	shellMocks.onNewShellTerminalShortcut.mockClear();
 	shellMocks.openShellTerminal.mockClear();
+	shellMocks.openShellTerminalHost.mockClear();
 	shellMocks.state.newShellTerminalListener = undefined;
 	shellMocks.onOpenSettingsShortcut.mockClear();
 	shellMocks.onPreviousSessionShortcut.mockClear();
@@ -938,17 +943,7 @@ describe("shell new-shell-terminal shortcut subscription", () => {
 	// Regression: the shell LAYOUT must own this, not the session view. When the
 	// session view owned it, the shortcut did nothing outside a session route —
 	// nothing was mounted to hear it.
-	it("opens a terminal from the dedicated terminals route", async () => {
-		shellMocks.state.matchRouteTarget = "/terminals";
-		await renderShell();
-
-		pressNewShellTerminal();
-
-		expect(useUiStore.getState().newShellTerminalNonce).toBe(1);
-		expect(shellMocks.openShellTerminal).toHaveBeenCalledTimes(1);
-	});
-
-	// Regression (#4772): ⌘T on the project board must not yank users into /terminals.
+	// Regression (#4772): ⌘T on the project board has no session to open a terminal in.
 	it("ignores the shortcut on the project board", async () => {
 		shellMocks.state.routeParams = { projectId: "proj-1" };
 		await renderShell();
@@ -1013,6 +1008,19 @@ describe("shell new-shell-terminal shortcut subscription", () => {
 
 		expect(useUiStore.getState().newShellTerminalNonce).toBe(2);
 		expect(shellMocks.openShellTerminal).toHaveBeenCalledTimes(2);
+	});
+
+	// Regression: ⌘T did nothing on a remote machine's session.
+	it("opens the terminal on the remote host that owns the session on screen", async () => {
+		shellMocks.state.routeParams = { hostId: "box-a", projectId: "remote-proj", sessionId: "remote-sess" };
+		await renderShell();
+
+		pressNewShellTerminal();
+
+		expect(shellMocks.openShellTerminal).toHaveBeenCalledWith(
+			expect.objectContaining({ projectId: "remote-proj", sessionId: "remote-sess" }),
+		);
+		expect(shellMocks.openShellTerminalHost).toHaveBeenLastCalledWith("box-a");
 	});
 });
 

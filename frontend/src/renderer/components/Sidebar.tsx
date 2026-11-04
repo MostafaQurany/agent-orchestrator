@@ -127,6 +127,8 @@ import {
 	useSidebar,
 } from "./ui/sidebar";
 import { BuildInfoTooltip } from "./BuildInfoTooltip";
+import { Button } from "./ui/button";
+import { Pressable } from "./ui/pressable";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
 import { OrchestratorIcon } from "./icons";
 import { Badge } from "./ui/badge";
@@ -158,15 +160,14 @@ const brandInTitlebar = isMac || isLinuxPlatform();
 const noDragStyle = isMac ? ({ WebkitAppRegion: "no-drag" } as React.CSSProperties) : undefined;
 
 // One row-action layout shared by project rows, session rows, and the section
-// header "+": 24px square buttons, 14px icons, a 6px gap, and a 4px right inset,
-// vertically centered in the row, so every action's right edge lines up. Never
-// painted: `.sidebar-icon-action` also opts out of the sidebar focus fill in
-// styles.css. Hover/reveal stays instant (no transitions here).
+// header "+": 24px quiet icon buttons (Button size="icon-xs"), 14px icons, a 6px
+// gap, and a 4px right inset, vertically centered in the row, so every action's
+// right edge lines up. `.sidebar-icon-action` opts out of the sidebar focus fill
+// in styles.css; the Button's hover pill owns the fill.
 const ROW_ACTIONS_CLASS = "absolute inset-y-0 right-1 flex items-center gap-0.5";
 /** Long enough that sweeping the pointer across the list starts no agents. */
 const AGENT_WARM_UP_HOVER_MS = 300;
-const ROW_ACTION_BUTTON_CLASS =
-	"sidebar-icon-action grid size-6 shrink-0 place-items-center rounded-md !bg-transparent text-passive hover:!bg-interactive-hover focus:!bg-transparent focus-visible:!bg-interactive-hover active:!bg-interactive-hover data-[state=open]:!bg-interactive-hover hover:text-foreground focus-visible:text-foreground disabled:pointer-events-none disabled:opacity-50 data-[state=open]:text-foreground [&_svg]:size-icon-md";
+const ROW_ACTION_BUTTON_CLASS = "sidebar-icon-action [&_svg]:size-icon-md";
 const HOVER_ACTION_CLASS = ROW_ACTION_BUTTON_CLASS;
 const SESSION_ACTION_CLASS = ROW_ACTION_BUTTON_CLASS;
 
@@ -549,7 +550,8 @@ function useSelection() {
 	const goArtifacts = useCallback(() => void navigate({ to: "/artifacts" }), [navigate]);
 	const goStandaloneBoard = useCallback(() => void navigate({ to: "/sessions" }), [navigate]);
 	const goGlobalSettings = useCallback(() => openGlobalSettings(), [openGlobalSettings]);
-	const goConnectMobile = useCallback(() => openGlobalSettings("mobile"), [openGlobalSettings]);
+	// Asking to connect a phone is the consent to turn Connect Mobile on, so the code starts preparing at once.
+	const goConnectMobile = useCallback(() => openGlobalSettings("mobile", { startPairing: true }), [openGlobalSettings]);
 	const goSettings = useCallback((projectId: string, cloudOrgId?: string) => openProjectSettings(projectId, { cloudOrgId }), [openProjectSettings]);
 	const goProject = useCallback(
 		(projectId: string) => void navigate({ to: "/projects/$projectId", params: { projectId } }),
@@ -758,11 +760,16 @@ export function Sidebar({
 				row.scrollIntoView?.({ block: "nearest" });
 				return;
 			}
-			// Not rendered yet: its section may be closed. Open them all once, then retry.
+			// Not rendered yet: its section may be closed. Open only the sections
+			// that hold it, once, then retry. An orchestrator has no row (its
+			// button sits on the project row), so it must not open Scratchpad.
 			if (attempts === 0) {
-				setPinnedOpen(true);
-				setProjectsOpen(true);
-				setScratchpadOpen(true);
+				if (pinnedSessions.some((session) => session.id === activeSessionKey)) setPinnedOpen(true);
+				if (standaloneWorkspace?.sessions.some((session) => session.id === activeSessionKey)) {
+					setScratchpadOpen(true);
+				} else {
+					setProjectsOpen(true);
+				}
 			}
 			if (attempts++ < 3) frame = requestAnimationFrame(reveal);
 		};
@@ -987,7 +994,7 @@ export function Sidebar({
 				 *   never `focus-visible:outline-none` (global kill would leave it blind).
 				 * - No separate "home" affordance on the mark — the whole brand is the control.
 				 */}
-				<button
+				<Pressable
 					aria-label={t("shell.goHome")}
 					className={cn(
 						"group/brand flex w-full shrink-0 items-center gap-1.5 rounded-md px-0.5 text-left",
@@ -1003,21 +1010,23 @@ export function Sidebar({
 					<span
 						className="sidebar-expanded-chrome min-w-0 flex-1 truncate text-base font-semibold leading-tight tracking-tight-lg text-foreground group-data-[collapsible=icon]:hidden"
 					>
-						<BuildInfoTooltip>Orchestrator.inc</BuildInfoTooltip>
+						<BuildInfoTooltip>Orchestrator</BuildInfoTooltip>
 					</span>
-				</button>
+				</Pressable>
 				<Tooltip>
 					<TooltipTrigger asChild>
-						<button
+						<Button
 							aria-label={isCollapsed ? t("shell.expandSidebar") : t("shell.collapseSidebar")}
-							className="hidden size-control-board place-items-center rounded-lg text-muted-foreground transition-colors hover:bg-interactive-hover hover:text-foreground group-data-[collapsible=icon]:grid [&_svg]:size-icon-base"
+							className="hidden size-control-board rounded-lg group-data-[collapsible=icon]:inline-flex [&_svg]:size-icon-base"
 							onClick={toggleSidebar}
+							size="none"
 							type="button"
+							variant="quiet"
 						>
 							<PanelLeft aria-hidden="true" />
-						</button>
+						</Button>
 					</TooltipTrigger>
-					<TooltipContent side="right">
+					<TooltipContent shortcut="toggle-sidebar" side="right">
 						{isCollapsed ? t("shell.expandSidebar") : t("shell.collapseSidebar")}
 					</TooltipContent>
 				</Tooltip>
@@ -1259,7 +1268,7 @@ export function Sidebar({
 							status={updateStatus}
 							tabIndex={isCollapsed ? -1 : 0}
 						/>
-						<button
+						<Pressable
 							className={FOOTER_NAV_BUTTON_CLASS}
 							disabled={settingsPage.cueBusy}
 							onClick={settingsPage.close}
@@ -1270,7 +1279,7 @@ export function Sidebar({
 								<ArrowLeft aria-hidden="true" />
 								<span className="tracking-tight">{t("settings.back")}</span>
 							</span>
-						</button>
+						</Pressable>
 					</>
 				) : (
 				<>
@@ -1297,7 +1306,7 @@ export function Sidebar({
 						status={updateStatus}
 						tabIndex={isCollapsed ? -1 : 0}
 					/>
-					<button
+					<Pressable
 						aria-label={t("settings.connectMobile")}
 						className={FOOTER_NAV_BUTTON_CLASS}
 						onClick={() => selection.goConnectMobile()}
@@ -1309,9 +1318,9 @@ export function Sidebar({
 							<Smartphone aria-hidden="true" />
 							<span className="tracking-tight">{t("settings.connectMobile")}</span>
 						</span>
-					</button>
+					</Pressable>
 					<div className="flex w-full items-center gap-1">
-						<button
+						<Pressable
 							aria-label={t("shell.settings")}
 							className={cn(FOOTER_NAV_BUTTON_CLASS, "min-w-0 flex-1")}
 							onClick={() => selection.goGlobalSettings()}
@@ -1323,7 +1332,7 @@ export function Sidebar({
 								<Settings aria-hidden="true" />
 								<span className="tracking-tight">{t("shell.settings")}</span>
 							</span>
-						</button>
+						</Pressable>
 						<AwakeControl tabIndex={isCollapsed ? -1 : 0} />
 					</div>
 				</div>
@@ -1341,7 +1350,7 @@ export function Sidebar({
 					<CloudAccountRailButton tabIndex={isCollapsed ? 0 : -1} />
 					<Tooltip>
 						<TooltipTrigger asChild>
-							<button
+							<Pressable
 								aria-label={t("settings.connectMobile")}
 								className={FOOTER_RAIL_BUTTON_CLASS}
 								onClick={() => selection.goConnectMobile()}
@@ -1352,13 +1361,13 @@ export function Sidebar({
 								<span className="relative z-[1] grid place-items-center [&_svg]:size-icon-base">
 									<Smartphone aria-hidden="true" />
 								</span>
-							</button>
+							</Pressable>
 						</TooltipTrigger>
 						<TooltipContent side="right">{t("settings.connectMobile")}</TooltipContent>
 					</Tooltip>
 					<Tooltip>
 						<TooltipTrigger asChild>
-							<button
+							<Pressable
 								aria-label={t("shell.settings")}
 								className={FOOTER_RAIL_BUTTON_CLASS}
 								onClick={() => selection.goGlobalSettings()}
@@ -1369,9 +1378,9 @@ export function Sidebar({
 								<span className="relative z-[1] grid place-items-center [&_svg]:size-icon-base">
 									<Settings aria-hidden="true" />
 								</span>
-							</button>
+							</Pressable>
 						</TooltipTrigger>
-						<TooltipContent side="right">{t("shell.settings")}</TooltipContent>
+						<TooltipContent shortcut="open-settings" side="right">{t("shell.settings")}</TooltipContent>
 					</Tooltip>
 				</div>
 				</>
@@ -1582,7 +1591,7 @@ const ProjectItem = memo(function ProjectItem({
 		onToggle(workspace.id);
 	};
 
-	// Mirrors ShellTopbar's launcher: attach to the running orchestrator, or
+	// Mirrors the session topbar's launcher: attach to the running orchestrator, or
 	// spawn one via the daemon and follow it once the workspace refetches.
 	// Expand a collapsed project so opening the orchestrator also reveals its
 	// session list — otherwise the tree stays shut while you're inside it.
@@ -1811,7 +1820,16 @@ const ProjectItem = memo(function ProjectItem({
 									>
 										{workspace.name}
 									</span>
-									{hostLabel && <Badge variant="outline" className="sidebar-expanded-chrome relative z-[1] h-4 shrink-0 px-1.5 text-2xs group-data-[collapsible=icon]:hidden">{hostLabel}</Badge>}
+									{/* The host badge shrinks and truncates in narrow sidebars so it never
+									    runs under the row actions; half the row stays for the name. */}
+									{hostLabel && (
+										<Badge
+											variant="outline"
+											className="sidebar-expanded-chrome relative z-[1] h-4 min-w-0 max-w-1/2 shrink justify-start px-1.5 text-2xs group-data-[collapsible=icon]:hidden"
+										>
+											<span className="truncate">{hostLabel}</span>
+										</Badge>
+									)}
 									{workspace.kind === "cloud" && (
 										<Badge
 											variant="outline"
@@ -1823,7 +1841,7 @@ const ProjectItem = memo(function ProjectItem({
 								</SidebarMenuButton>
 								{/* Folder disclosure toggle: sibling of the nav button, absolutely positioned over
 	    the icon area so it intercepts clicks there without nesting buttons. */}
-								<button
+								<Pressable
 									aria-label={t("shell.toggleProject", {
 										name: nameWithHost,
 									})}
@@ -1856,7 +1874,9 @@ const ProjectItem = memo(function ProjectItem({
 										<Tooltip>
 											<TooltipTrigger asChild>
 												<span className="inline-flex">
-													<button
+													<Button
+														size="icon-xs"
+														variant="quiet"
 														aria-current={orchestratorActive ? "page" : undefined}
 														aria-label={
 															orchestrator
@@ -1873,7 +1893,7 @@ const ProjectItem = memo(function ProjectItem({
 														type="button"
 													>
 														<OrchestratorIcon aria-hidden="true" strokeWidth={orchestratorActive ? 2.5 : 2} />
-													</button>
+													</Button>
 												</span>
 											</TooltipTrigger>
 												<TooltipContent>
@@ -1892,7 +1912,9 @@ const ProjectItem = memo(function ProjectItem({
 									<>
 										<DropdownMenu>
 											<DropdownMenuTrigger asChild>
-												<button
+												<Button
+													size="icon-xs"
+													variant="quiet"
 													aria-label={t("shell.projectActions", {
 																name: nameWithHost,
 													})}
@@ -1900,7 +1922,7 @@ const ProjectItem = memo(function ProjectItem({
 													type="button"
 												>
 													<MoreVertical aria-hidden="true" />
-												</button>
+												</Button>
 											</DropdownMenuTrigger>
 											<DropdownMenuContent side="right" align="start" className="min-w-44">
 												<DropdownMenuItem disabled={isProjectRestarting} onSelect={() => requestNewTask(workspace.id, workspace.hostId)}>
@@ -2167,7 +2189,9 @@ function ScratchpadSection({
 										<Tooltip>
 											<TooltipTrigger asChild>
 												<span className="inline-flex">
-													<button
+													<Button
+														size="icon-xs"
+														variant="quiet"
 														aria-label={t("shell.archivedSessions")}
 														className={ROW_ACTION_BUTTON_CLASS}
 														onClick={(event) => {
@@ -2177,7 +2201,7 @@ function ScratchpadSection({
 														type="button"
 													>
 														<Archive aria-hidden="true" />
-													</button>
+													</Button>
 												</span>
 											</TooltipTrigger>
 											<TooltipContent>{t("shell.archivedSessions")}</TooltipContent>
@@ -2186,14 +2210,16 @@ function ScratchpadSection({
 									<Tooltip>
 										<TooltipTrigger asChild>
 											<span className="inline-flex">
-												<button
+												<Button
+													size="icon-xs"
+													variant="quiet"
 													aria-label={t("shell.openNewAgent")}
 													className={ROW_ACTION_BUTTON_CLASS}
 													onClick={() => requestNewTask(STANDALONE_WORKSPACE_ID)}
 													type="button"
 												>
 													<Plus aria-hidden="true" />
-												</button>
+												</Button>
 											</span>
 										</TooltipTrigger>
 										<TooltipContent>{t("shell.openNewAgent")}</TooltipContent>
@@ -2495,9 +2521,11 @@ const SessionRow = memo(function SessionRow({
 				void queryClient.invalidateQueries({ queryKey: conversationQueryKey(session.id) });
 			});
 	};
+	// A session shared from another organization is the sharer's to name.
+	const renamable = !session.cloud?.shared;
 	const beginRename = useCallback(() => {
-		rename.begin();
-	}, [rename.begin]);
+		if (renamable) rename.begin();
+	}, [rename.begin, renamable]);
 	// Owned here so both the hover Archive button and the context menu open the same confirm.
 	const [archiveOpen, setArchiveOpen] = useState(false);
 
@@ -2567,7 +2595,7 @@ const SessionRow = memo(function SessionRow({
 				>
 					<NavRowHighlight active={active} disabled={Boolean(reorder?.isDragging)} />
 					<div className={cn("relative z-[1] flex min-w-0 flex-1", reorder?.isDragging && "cursor-grabbing")}>
-						<button
+						<Pressable
 							aria-current={active ? "page" : undefined}
 							data-testid={session.hostId ? "remote-session-row" : undefined}
 							aria-keyshortcuts="F2"
@@ -2633,9 +2661,9 @@ const SessionRow = memo(function SessionRow({
 								>
 									{session.title}
 								</span>
-								{hostLabel ? <Badge variant="outline" className="h-4 shrink-0 px-1.5 text-2xs">{hostLabel}</Badge> : null}
+								{hostLabel ? <Badge variant="outline" className="h-4 min-w-0 max-w-1/2 shrink justify-start px-1.5 text-2xs"><span className="truncate">{hostLabel}</span></Badge> : null}
 							</span>
-						</button>
+						</Pressable>
 					</div>
 					{/* The timestamp is stable at the right edge. Pin and kill use label
 					    space while idle, then reveal without changing the row footprint. */}
@@ -2730,13 +2758,12 @@ const SessionActions = memo(function SessionActions({
 				)}
 				data-session-action-buttons=""
 			>
-				<Tooltip>
-					<TooltipTrigger asChild>
-						<button
+				{session.cloud?.shared ? null : <Button
+							size="icon-xs"
+							variant="quiet"
 							aria-label={session.isPinned ? t("shell.unpinSession") : t("shell.pinSession")}
 							className={cn(
 								SESSION_ACTION_CLASS,
-								"focus-visible:text-foreground",
 								session.isPinned && "text-foreground",
 							)}
 							onClick={(event) => {
@@ -2746,12 +2773,7 @@ const SessionActions = memo(function SessionActions({
 							type="button"
 						>
 							{session.isPinned ? <PinOff aria-hidden="true" /> : <Pin aria-hidden="true" />}
-						</button>
-					</TooltipTrigger>
-					<TooltipContent side="top">
-						{session.isPinned ? t("shell.unpinSession") : t("shell.pinSession")}
-					</TooltipContent>
-				</Tooltip>
+						</Button>}
 				<Tooltip>
 					<TooltipTrigger asChild>
 						<span className="inline-flex">
@@ -2761,15 +2783,17 @@ const SessionActions = memo(function SessionActions({
 								open={archiveOpen}
 								session={session}
 								trigger={
-									<button
+									<Button
+										size="icon-xs"
+										variant="quiet"
 										aria-label={t("shell.archiveSession")}
-										className={cn(SESSION_ACTION_CLASS, "focus-visible:text-foreground")}
+										className={SESSION_ACTION_CLASS}
 										disabled={isKilling}
 										onClick={handleArchive}
 										type="button"
 									>
 										<Archive aria-hidden="true" />
-									</button>
+									</Button>
 								}
 							/>
 						</span>
@@ -2793,7 +2817,7 @@ function CloudSignInRow({ tabIndex }: { tabIndex: number }) {
 	if (!configured || status !== "unauthenticated") return null;
 
 	return (
-		<button
+		<Pressable
 			aria-label={t("shell.signInToAOCloud")}
 			className={FOOTER_NAV_BUTTON_CLASS}
 			onClick={onSignIn}
@@ -2805,7 +2829,7 @@ function CloudSignInRow({ tabIndex }: { tabIndex: number }) {
 				<LogIn aria-hidden="true" />
 				<span className="tracking-tight">{t("shell.signInToAOCloud")}</span>
 			</span>
-		</button>
+		</Pressable>
 	);
 }
 
@@ -2822,7 +2846,7 @@ function CloudSignInRailButton({ tabIndex }: { tabIndex: number }) {
 	return (
 		<Tooltip>
 			<TooltipTrigger asChild>
-				<button
+				<Pressable
 					aria-label={t("shell.signInToAOCloud")}
 					className={FOOTER_RAIL_BUTTON_CLASS}
 					onClick={onSignIn}
@@ -2833,7 +2857,7 @@ function CloudSignInRailButton({ tabIndex }: { tabIndex: number }) {
 					<span className="relative z-[1] grid place-items-center [&_svg]:size-icon-base">
 						<LogIn aria-hidden="true" />
 					</span>
-				</button>
+				</Pressable>
 			</TooltipTrigger>
 			<TooltipContent side="right">{t("shell.signInToAOCloud")}</TooltipContent>
 		</Tooltip>
@@ -2854,7 +2878,7 @@ function CloudAccountRow({ tabIndex }: { tabIndex: number }) {
 	return (
 		<DropdownMenu>
 			<DropdownMenuTrigger asChild>
-				<button
+				<Pressable
 					aria-label={t("shell.signedInAs", {
 						email: session?.user.email ?? "AO Cloud",
 					})}
@@ -2873,7 +2897,7 @@ function CloudAccountRow({ tabIndex }: { tabIndex: number }) {
 							</span>
 						) : null}
 					</span>
-				</button>
+				</Pressable>
 			</DropdownMenuTrigger>
 			<DropdownMenuContent side="top" align="start" className="min-w-44">
 				<DropdownMenuItem
@@ -2931,7 +2955,7 @@ function CloudAccountRailButton({ tabIndex }: { tabIndex: number }) {
 	return (
 		<Tooltip>
 			<TooltipTrigger asChild>
-				<button
+				<Pressable
 					aria-label={t("shell.signedInAs", {
 						email: session?.user.email ?? "AO Cloud",
 					})}
@@ -2944,7 +2968,7 @@ function CloudAccountRailButton({ tabIndex }: { tabIndex: number }) {
 					<span className="relative z-[1] grid place-items-center [&_svg]:size-icon-base">
 						<AccountAvatar user={session?.user} />
 					</span>
-				</button>
+				</Pressable>
 			</TooltipTrigger>
 			<TooltipContent side="right">
 				{t("shell.signOutWithEmail", {
@@ -3054,7 +3078,7 @@ function UpdateStatusRow({
 		// announce an update and offer nothing to act on.
 		return (
 			<div className="flex w-full items-center gap-1" data-testid="sidebar-update-available">
-				<button
+				<Pressable
 					aria-label={
 						action.version
 							? t("shell.downloadUpdateVersion", { version: action.version })
@@ -3075,17 +3099,18 @@ function UpdateStatusRow({
 							)}
 						</span>
 					</span>
-				</button>
+				</Pressable>
 				{action.version && (
-					<button
+					<Button
 						aria-label={t("shell.dismissUpdateVersion", { version: action.version })}
-						className="grid size-8 shrink-0 place-items-center text-muted-foreground hover:text-foreground"
 						onClick={onDismissAvailable}
+						size="icon"
 						tabIndex={tabIndex}
 						type="button"
+						variant="quiet"
 					>
 						<X aria-hidden="true" className="size-icon-base" />
-					</button>
+					</Button>
 				)}
 			</div>
 		);
@@ -3108,7 +3133,7 @@ function UpdateStatusRow({
 	}
 
 	return (
-		<button
+		<Pressable
 			aria-label={t("shell.retryUpdateCheck")}
 			className="flex w-full items-center gap-2.5 rounded-lg border border-warning/35 bg-warning/12 p-2.5 text-left text-control font-medium text-warning hover:bg-warning/18 [&_svg]:text-warning"
 			data-testid="sidebar-update-failed"
@@ -3123,7 +3148,7 @@ function UpdateStatusRow({
 					{t("shell.retryUpdateCheck")}
 				</span>
 			</span>
-		</button>
+		</Pressable>
 	);
 }
 
@@ -3148,7 +3173,7 @@ function UpdateInstallSlide({
 
 	const versionNumber = installVersionNumber(action.version);
 	return (
-		<button
+		<Pressable
 			aria-label={
 				versionNumber
 					? t("shell.restartInstallUpdateVersion", { version: versionNumber })
@@ -3173,7 +3198,7 @@ function UpdateInstallSlide({
 					</>
 				) : null}
 			</span>
-		</button>
+		</Pressable>
 	);
 }
 
@@ -3200,7 +3225,7 @@ function UpdateStatusRail({
 		return (
 			<Tooltip>
 				<TooltipTrigger asChild>
-					<button
+					<Pressable
 						aria-label={
 							action.version
 								? t("shell.downloadUpdateVersion", { version: action.version })
@@ -3215,7 +3240,7 @@ function UpdateStatusRail({
 						<span className="relative z-[1] grid place-items-center [&_svg]:size-4">
 							<Download aria-hidden="true" />
 						</span>
-					</button>
+					</Pressable>
 				</TooltipTrigger>
 				<TooltipContent side="right">{label}</TooltipContent>
 			</Tooltip>
@@ -3245,7 +3270,7 @@ function UpdateStatusRail({
 		return (
 			<Tooltip>
 				<TooltipTrigger asChild>
-					<button
+					<Pressable
 						aria-label={t("shell.retryUpdateCheck")}
 						className="grid size-9 place-items-center rounded-lg bg-warning/12 text-warning hover:bg-warning/18 [&_svg]:size-4"
 						onClick={() => void aoBridge.updates.check()}
@@ -3253,7 +3278,7 @@ function UpdateStatusRail({
 						type="button"
 					>
 						<AlertTriangle aria-hidden="true" />
-					</button>
+					</Pressable>
 				</TooltipTrigger>
 				<TooltipContent side="right">
 					{t("shell.updateCheckFailed")} · {t("shell.retryUpdateCheck")}
@@ -3266,7 +3291,7 @@ function UpdateStatusRail({
 	return (
 		<Tooltip>
 			<TooltipTrigger asChild>
-				<button
+				<Pressable
 					aria-label={
 						versionNumber
 							? t("shell.restartInstallUpdateVersion", { version: versionNumber })
@@ -3278,7 +3303,7 @@ function UpdateStatusRail({
 					type="button"
 				>
 					<RefreshCw aria-hidden="true" />
-				</button>
+				</Pressable>
 			</TooltipTrigger>
 			<TooltipContent side="right">
 				{t("shell.restartToUpdate")}
@@ -3383,7 +3408,7 @@ function SectionDisclosure({
 				)}
 			>
 				<NavRowHighlight />
-				<button
+				<Pressable
 					aria-expanded={open}
 					aria-label={label}
 					className="relative z-[1] flex min-w-0 flex-1 self-stretch items-center gap-2 text-left"
@@ -3391,14 +3416,14 @@ function SectionDisclosure({
 					type="button"
 				>
 					{labelRow}
-				</button>
+				</Pressable>
 				<span className="relative z-[1] shrink-0">{trailing}</span>
 			</div>
 		);
 	}
 
 	return (
-		<button
+		<Pressable
 			aria-expanded={open}
 			aria-label={label}
 			className={cn(
@@ -3414,7 +3439,7 @@ function SectionDisclosure({
 			<span className="relative z-[1] flex min-w-0 flex-1 items-center gap-2">
 				{labelRow}
 			</span>
-		</button>
+		</Pressable>
 	);
 }
 
@@ -3566,7 +3591,9 @@ function CreateProjectButton({
 				<Tooltip>
 					<TooltipTrigger asChild>
 						<span className="inline-flex">
-							<button
+							<Button
+								size="icon-xs"
+								variant="quiet"
 								aria-label={t("shell.newProject")}
 								className={ROW_ACTION_BUTTON_CLASS}
 								disabled={disabled}
@@ -3574,7 +3601,7 @@ function CreateProjectButton({
 								type="button"
 							>
 									<Plus aria-hidden="true" />
-							</button>
+							</Button>
 						</span>
 					</TooltipTrigger>
 					<TooltipContent>{label}</TooltipContent>
@@ -3591,14 +3618,16 @@ function CreateProjectListItem() {
 		<SidebarMenuItem className="mb-px group-data-[collapsible=icon]:mb-0">
 			<Tooltip>
 				<TooltipTrigger asChild>
-					<button
+					<Button
 						aria-label={t("shell.newProject")}
-						className="grid h-control-board w-full place-items-center rounded-lg text-passive transition-colors hover:bg-interactive-hover hover:text-muted-foreground"
+						className="h-control-board w-full rounded-lg"
 						onClick={() => requestCreateProject()}
+						size="none"
 						type="button"
+						variant="quiet"
 					>
 						<Plus className="size-icon-sm" aria-hidden="true" />
-					</button>
+					</Button>
 				</TooltipTrigger>
 				<TooltipContent side="right">{t("shell.newProject")}</TooltipContent>
 			</Tooltip>
