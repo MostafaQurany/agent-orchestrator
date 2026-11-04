@@ -325,7 +325,7 @@ function ArtifactFilmstrip({ config, sessionId, artifacts, index, versionOf, onS
 		setVisiblePaths(new Set(viewableItems.flatMap((token) => token.item ? [token.item.path] : [])));
 	}).current;
 	const viewabilityConfig = useRef({ itemVisiblePercentThreshold: 50, minimumViewTime: 120 }).current;
-	// A preview that cannot load falls back to the kind's glyph, until the file changes.
+	// A picture or preview that cannot load falls back to the kind's glyph, until the file changes.
 	const [previewFailed, setPreviewFailed] = useState<Readonly<Record<string, string>>>({});
 	// Returns the same object when nothing changed, so a preview reporting failure again does not re-render.
 	const markPreviewFailed = useCallback((path: string, updatedAt: string) => {
@@ -352,13 +352,17 @@ function ArtifactFilmstrip({ config, sessionId, artifacts, index, versionOf, onS
 				keyExtractor={(artifact) => artifact.path}
 				// Fixed-size tiles let the list jump to any of them without measuring.
 				getItemLayout={(_, item) => ({ length: STRIP_TILE + STRIP_GAP, offset: (STRIP_TILE + STRIP_GAP) * item, index: item })}
-				initialScrollIndex={Math.max(0, index)}
+				// No initialScrollIndex: when the tiles fit without scrolling, the list
+				// would render from that tile on and never draw (or preview) the ones before
+				// it. The effect above places the strip instead.
 				renderItem={({ item, index: position }) => {
 					const selected = position === index;
 					const visual = artifactVisual(item, t);
-					const picture = artifactViewKind(item) === "image" ? artifactImageSource(config, sessionId, item.path, item.updatedAt) : undefined;
+					const failed = previewFailed[item.path] === item.updatedAt;
+					// An image that cannot load (a format the phone can't decode, a 404) shows the glyph instead.
+					const picture = artifactViewKind(item) === "image" && !failed ? artifactImageSource(config, sessionId, item.path, item.updatedAt) : undefined;
 					// A text, markdown or HTML file shows a peek at its contents, as its gallery card does.
-					const previewing = !picture && hasContentThumbnail(item) && previewFailed[item.path] !== item.updatedAt;
+					const previewing = !picture && hasContentThumbnail(item) && !failed;
 					return (
 						<View style={{ marginLeft: position > 0 ? STRIP_GAP : 0 }}>
 							<Pressable
@@ -369,7 +373,7 @@ function ArtifactFilmstrip({ config, sessionId, artifacts, index, versionOf, onS
 								style={[styles.tile, { backgroundColor: visual.tint }, selected ? styles.tileSelected : { opacity: 0.6 }]}
 							>
 								{picture ? (
-									<Image accessibilityIgnoresInvertColors source={imageSourceForPlatform(picture)} resizeMode="cover" style={StyleSheet.absoluteFill} />
+									<Image accessibilityIgnoresInvertColors source={imageSourceForPlatform(picture)} resizeMode="cover" onError={() => markPreviewFailed(item.path, item.updatedAt)} style={StyleSheet.absoluteFill} />
 								) : previewing ? (
 									<ArtifactThumbnail config={config} sessionId={sessionId} artifact={item} visible={visiblePaths.has(item.path)} versionOf={versionOf} onFailed={() => markPreviewFailed(item.path, item.updatedAt)} />
 								) : (
@@ -448,6 +452,10 @@ function ArtifactWeb({ config, url, version, page }: {
 				// cookie, and it cannot reach the daemon.
 				source={html ? { html } : { uri: url, headers: authHeaders(config) }}
 				style={styles.web}
+				// Android: the page keeps its own drags (panning a wide or zoomed page, a
+				// pinch) instead of the pager taking them as a page turn. An HTML page is
+				// then left through the strip. iOS hands the gesture over natively.
+				nestedScrollEnabled
 				startInLoadingState
 				renderLoading={() => <View style={styles.webLoading}><ActivityIndicator color={t.accent} /></View>}
 				onLoadStart={() => setError(undefined)}
