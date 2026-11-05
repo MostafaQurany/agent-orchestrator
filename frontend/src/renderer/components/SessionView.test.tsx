@@ -2677,10 +2677,14 @@ describe("SessionView", () => {
 			reviews: [], runs: [],
 		}));
 		fireEvent.click(screen.getByRole("button", { name: "open reviewer chat" }));
-		expect(screen.getByTestId("reviewer-chat-surface")).toBeInTheDocument();
+		const reviewerSurface = screen.getByTestId("reviewer-chat-surface");
+		expect(reviewerSurface).toBeVisible();
 		act(() => useUiStore.getState().setActiveShellTerminal("cue-shell"));
-		await waitFor(() => expect(screen.queryByTestId("reviewer-chat-surface")).not.toBeInTheDocument());
+		await waitFor(() => expect(reviewerSurface).not.toBeVisible());
 		expect(screen.getByTestId("terminal-target")).toHaveTextContent("cue-shell");
+		fireEvent.click(screen.getByRole("button", { name: "open reviewer chat" }));
+		expect(screen.getByTestId("reviewer-chat-surface")).toBe(reviewerSurface);
+		expect(reviewerSurface).toBeVisible();
 	});
 
 	it("reveals the primary chat for each palette hit over a file tab", async () => {
@@ -4830,7 +4834,7 @@ describe("SessionView", () => {
 		expect(screen.getByTestId("reviewer-chat-surface")).toHaveTextContent("review-1");
 
 		fireEvent.click(screen.getByRole("button", { name: "send review feedback" }));
-		expect(screen.queryByTestId("reviewer-chat-surface")).not.toBeInTheDocument();
+		expect(screen.getByTestId("reviewer-chat-surface")).not.toBeVisible();
 		expect(screen.getByTestId("chat-surface")).toBeInTheDocument();
 	});
 
