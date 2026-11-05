@@ -1,6 +1,9 @@
 package domain
 
-import "testing"
+import (
+	"encoding/json"
+	"testing"
+)
 
 func TestProjectConfigValidate(t *testing.T) {
 	tests := []struct {
@@ -220,5 +223,60 @@ func TestProjectConfigIsZero(t *testing.T) {
 	}
 	if (ProjectConfig{AutoReview: true}).IsZero() {
 		t.Fatal("config with autoReview enabled should not be zero")
+	}
+	if (ProjectConfig{RequirePlan: true}).IsZero() {
+		t.Fatal("config with requirePlan enabled should not be zero")
+	}
+}
+
+func TestProjectConfigRequirePlanJSON(t *testing.T) {
+	// Default false: omitempty omits field when false.
+	emptyCfg := ProjectConfig{}
+	data, err := json.Marshal(emptyCfg)
+	if err != nil {
+		t.Fatalf("Marshal(empty) failed: %v", err)
+	}
+	var rawEmpty map[string]any
+	if err := json.Unmarshal(data, &rawEmpty); err != nil {
+		t.Fatalf("Unmarshal(Marshal(empty)) failed: %v", err)
+	}
+	if _, exists := rawEmpty["requirePlan"]; exists {
+		t.Fatalf("expected requirePlan absent from empty JSON, got %v", rawEmpty["requirePlan"])
+	}
+
+	// Unmarshal empty JSON defaults RequirePlan to false.
+	var unmarshaledDefault ProjectConfig
+	if err := json.Unmarshal([]byte(`{}`), &unmarshaledDefault); err != nil {
+		t.Fatalf("Unmarshal({}) failed: %v", err)
+	}
+	if unmarshaledDefault.RequirePlan {
+		t.Fatalf("RequirePlan = true, want default false")
+	}
+
+	// Marshal true includes requirePlan.
+	trueCfg := ProjectConfig{RequirePlan: true}
+	data, err = json.Marshal(trueCfg)
+	if err != nil {
+		t.Fatalf("Marshal(trueCfg) failed: %v", err)
+	}
+	var rawTrue map[string]any
+	if err := json.Unmarshal(data, &rawTrue); err != nil {
+		t.Fatalf("Unmarshal(Marshal(trueCfg)) failed: %v", err)
+	}
+	val, ok := rawTrue["requirePlan"]
+	if !ok {
+		t.Fatalf("expected requirePlan present in marshaled JSON, raw: %s", string(data))
+	}
+	if b, isBool := val.(bool); !isBool || !b {
+		t.Fatalf("expected requirePlan=true, got %v", val)
+	}
+
+	// Unmarshal true parses correctly.
+	var unmarshaledTrue ProjectConfig
+	if err := json.Unmarshal([]byte(`{"requirePlan":true}`), &unmarshaledTrue); err != nil {
+		t.Fatalf("Unmarshal(true) failed: %v", err)
+	}
+	if !unmarshaledTrue.RequirePlan {
+		t.Fatalf("RequirePlan = false, want true")
 	}
 }
