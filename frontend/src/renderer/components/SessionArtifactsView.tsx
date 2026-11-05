@@ -128,14 +128,49 @@ function OpenCloudArtifactsFolderButton({ orgId, sessionId }: { orgId: string; s
 	);
 }
 
+// The zoom toolbar fades out this long after the last zoom or pointer visit.
+const ZOOM_CONTROLS_IDLE_MS = 1_500;
+// A pointer this close to the preview's bottom edge brings the toolbar back.
+const ZOOM_CONTROLS_REVEAL_PX = 96;
+
 /**
  * The open artifact's zoom, floating over the bottom of the preview: out, the
- * level (which resets to fit), and in. Shown while the artifact can zoom.
+ * level (which resets to fit), and in. Shown while the artifact can zoom, and
+ * only while in use: it appears when a file opens, on any zoom (pinch, its
+ * buttons or the shortcuts), and when the pointer nears the bottom edge, then
+ * fades out once idle. Hover or keyboard focus keeps it up.
  */
 function ArtifactZoomControls({ controller }: { controller: ArtifactZoomController }) {
 	const { t } = useTranslation();
 	const { available, zoom } = useArtifactZoomState(controller);
+	const toolbarRef = useRef<HTMLDivElement>(null);
+	const hideTimer = useRef<number | undefined>(undefined);
+	const [shown, setShown] = useState(true);
+	const [held, setHeld] = useState(false);
+	const reveal = useCallback(() => {
+		setShown(true);
+		window.clearTimeout(hideTimer.current);
+		hideTimer.current = window.setTimeout(() => setShown(false), ZOOM_CONTROLS_IDLE_MS);
+	}, []);
+	useEffect(() => () => window.clearTimeout(hideTimer.current), []);
+	useEffect(() => {
+		if (available) reveal();
+	}, [available, reveal, zoom]);
+	useEffect(() => {
+		const area = toolbarRef.current?.parentElement;
+		if (!available || !area) return;
+		const onPointerMove = (event: PointerEvent) => {
+			if (area.getBoundingClientRect().bottom - event.clientY <= ZOOM_CONTROLS_REVEAL_PX) reveal();
+		};
+		area.addEventListener("pointermove", onPointerMove);
+		return () => area.removeEventListener("pointermove", onPointerMove);
+	}, [available, reveal]);
 	if (!available) return null;
+	const visible = shown || held;
+	const release = () => {
+		setHeld(false);
+		reveal();
+	};
 	const controls = [
 		{ label: t("artifacts.zoomOut"), icon: ZoomOut, disabled: zoom <= MIN_ARTIFACT_ZOOM, onClick: () => controller.step(-1) },
 		{ label: t("artifacts.zoomIn"), icon: ZoomIn, disabled: zoom >= MAX_ARTIFACT_ZOOM, onClick: () => controller.step(1) },
@@ -153,7 +188,19 @@ function ArtifactZoomControls({ controller }: { controller: ArtifactZoomControll
 	return (
 		<div
 			aria-label={t("artifacts.zoom")}
-			className="absolute bottom-3 left-1/2 z-10 flex -translate-x-1/2 items-center gap-px rounded-lg border border-(--color-border-overlay) bg-overlay p-0.5 text-popover-foreground shadow-(--shadow-popover)"
+			className={cn(
+				"absolute bottom-3 left-1/2 z-10 flex -translate-x-1/2 items-center gap-px rounded-lg border border-(--color-border-overlay) bg-overlay p-0.5 text-popover-foreground shadow-(--shadow-popover)",
+				"transition-opacity duration-(--duration-normal) ease-out motion-reduce:transition-none",
+				!visible && "pointer-events-none opacity-0",
+			)}
+			data-state={visible ? "visible" : "hidden"}
+			onBlur={(event) => {
+				if (!event.currentTarget.contains(event.relatedTarget as Node | null)) release();
+			}}
+			onFocus={() => setHeld(true)}
+			onPointerEnter={() => setHeld(true)}
+			onPointerLeave={release}
+			ref={toolbarRef}
 			role="group"
 		>
 			{button(controls[0])}

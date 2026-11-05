@@ -504,7 +504,7 @@ describe("SessionArtifactsView", () => {
 		openExternal.mockRestore();
 	});
 
-	it("zooms an HTML page from the header and its shortcuts, and resets to fit", async () => {
+	it("zooms an HTML page from the toolbar and its shortcuts, and resets to fit", async () => {
 		renderView(<SessionArtifactsView request={{ key: 1, path: "report.html" }} session={session()} />);
 		const reset = screen.getByRole("button", { name: "Reset zoom" });
 		expect(reset).toHaveTextContent("100%");
@@ -517,6 +517,22 @@ describe("SessionArtifactsView", () => {
 		expect(reset).toHaveTextContent("100%");
 		act(() => { screen.getByRole("button", { name: "Zoom in" }).dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, cancelable: true, ctrlKey: true, metaKey: true, key: "=" })); });
 		expect(reset).toHaveTextContent("110%");
+	});
+
+	it("fades the zoom controls out when idle and brings them back on a zoom", async () => {
+		vi.useFakeTimers({ shouldAdvanceTime: true });
+		try {
+			renderView(<SessionArtifactsView request={{ key: 1, path: "report.html" }} session={session()} />);
+			const toolbar = screen.getByRole("group", { name: "Zoom" });
+			expect(toolbar).toHaveAttribute("data-state", "visible");
+			await act(() => vi.advanceTimersByTimeAsync(1_500));
+			expect(toolbar).toHaveAttribute("data-state", "hidden");
+			act(() => { toolbar.dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, cancelable: true, ctrlKey: true, metaKey: true, key: "=" })); });
+			expect(toolbar).toHaveAttribute("data-state", "visible");
+			expect(screen.getByRole("button", { name: "Reset zoom" })).toHaveTextContent("110%");
+		} finally {
+			vi.useRealTimers();
+		}
 	});
 
 	it("shows no zoom controls when the open file cannot zoom", async () => {
