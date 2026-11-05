@@ -785,9 +785,9 @@ describe("SessionArtifactsView", () => {
 	});
 
 	it.each([
-		{ location: "local", hostId: undefined, cloud: false, path: "chart.png", separators: 1, actions: [expect.stringMatching(/^Show in /), expect.stringMatching(/^Show in /), "Delete artifact"] },
+		{ location: "local", hostId: undefined, cloud: false, path: "chart.png", separators: 1, actions: [expect.stringMatching(/^Show in /), expect.stringMatching(/^Show in /), "Open in browser", "Delete artifact"] },
 		{ location: "remote", hostId: "remote-1", cloud: false, path: "chart.png", separators: 0, actions: ["Delete artifact"] },
-		{ location: "cloud", hostId: undefined, cloud: true, path: "chart.png", separators: 2, actions: [expect.stringMatching(/^Show in /), "Download", "Delete artifact"] },
+		{ location: "cloud", hostId: undefined, cloud: true, path: "chart.png", separators: 2, actions: [expect.stringMatching(/^Show in /), "Open in browser", "Download", "Delete artifact"] },
 		{ location: "local", hostId: undefined, cloud: false, path: "notes.md", separators: 2, actions: [expect.stringMatching(/^Show in /), expect.stringMatching(/^Show in /), "Copy as Markdown", "Delete artifact"] },
 		{ location: "remote", hostId: "remote-1", cloud: false, path: "notes.md", separators: 1, actions: ["Copy as Markdown", "Delete artifact"] },
 		{ location: "cloud", hostId: undefined, cloud: true, path: "notes.md", separators: 2, actions: [expect.stringMatching(/^Show in /), "Copy as Markdown", "Download", "Delete artifact"] },

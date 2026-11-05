@@ -226,6 +226,7 @@ function ArtifactZoomControls({ controller }: { controller: ArtifactZoomControll
  * an HTML artifact's page or source, the file view's display modes and
  * actions (Edit, Add feedback), Open in AO Browser, and History. The menu
  * mounts this each time it opens, so it reads the file view's current actions.
+ * The file actions always follow, so every group ends with a separator.
  */
 function ArtifactViewMenuItems({ fileActions, history, onOpenInAOBrowser, page }: {
 	fileActions: ArtifactMenuActions;
@@ -271,10 +272,12 @@ function ArtifactViewMenuItems({ fileActions, history, onOpenInAOBrowser, page }
 		) });
 	}
 	if (history) groups.push({ key: "history", node: history });
-	return groups.map(({ key, node }, index) => (
+	// Each group ends with a separator from the file actions after it, so a menu
+	// with none of these starts straight at the file actions.
+	return groups.map(({ key, node }) => (
 		<Fragment key={key}>
-			{index > 0 ? <DropdownMenuSeparator /> : null}
 			{node}
+			<DropdownMenuSeparator />
 		</Fragment>
 	));
 }

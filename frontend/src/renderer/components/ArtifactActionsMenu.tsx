@@ -279,8 +279,8 @@ export function ArtifactActionsMenu({
 				
 				) : menuTrigger}
 				<DropdownMenuContent align={iconOnly ? "end" : "start"} className="min-w-44" data-browser-native-overlay="true">
+					{/* The caller's rows come first and end with their own separator, if any render. */}
 					{children}
-					{children ? <DropdownMenuSeparator /> : null}
 					{onTogglePin || onOpenInSession ? (
 						<>
 							{onTogglePin ? (
