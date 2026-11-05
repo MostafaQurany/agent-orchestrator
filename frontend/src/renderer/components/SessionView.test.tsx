@@ -4834,7 +4834,7 @@ describe("SessionView", () => {
 		expect(screen.getByTestId("reviewer-chat-surface")).toHaveTextContent("review-1");
 
 		fireEvent.click(screen.getByRole("button", { name: "send review feedback" }));
-		expect(screen.getByTestId("reviewer-chat-surface")).not.toBeVisible();
+		expect(screen.queryByTestId("reviewer-chat-surface")).not.toBeInTheDocument();
 		expect(screen.getByTestId("chat-surface")).toBeInTheDocument();
 	});
 
