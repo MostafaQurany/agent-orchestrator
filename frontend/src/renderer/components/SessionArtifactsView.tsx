@@ -711,7 +711,7 @@ export function SessionArtifactsView({
 					>
 						<ChevronLeft aria-hidden="true" className="size-icon-sm" />
 					</Button>
-					<ArtifactActionsMenu artifact={selected} downloadUrl={listed?.rawUrl} className="min-w-0 flex-1 shrink justify-start" hostId={hostId} key={selected.path} session={session}>
+					<ArtifactActionsMenu artifact={selected} downloadUrl={listed?.rawUrl} className="w-fit min-w-0 max-w-full shrink justify-start" hostId={hostId} key={selected.path} session={session}>
 						<ArtifactViewMenuItems
 							fileActions={fileMenuActions}
 							history={selectedFile.data?.binary || (session.cloud && fileMediaKind(selected.path)) ? null : (
@@ -721,6 +721,8 @@ export function SessionArtifactsView({
 							page={hasHtmlPreview && previewVersion === null ? { showingSource: showingHtmlSource, onShowSource: (source) => setHtmlSourcePath(source ? selected.path : null) } : undefined}
 						/>
 					</ArtifactActionsMenu>
+					{/* The name sizes to its text; the rest of the row stays empty. */}
+					<div aria-hidden="true" className="min-w-0 flex-1" />
 					<div className="flex shrink-0 items-center gap-0.5">
 						<div className="flex shrink-0 items-center" ref={setToolbarHost} />
 						{/* The artifact's public link. Only the person who started a cloud
