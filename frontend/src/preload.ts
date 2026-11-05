@@ -37,6 +37,7 @@ import type {
 	EditorHandoffStateOptions,
 	EditorId,
 	EditorPreferenceState,
+	OpenArtifactInBrowserInput,
 	OpenSessionArtifactsInput,
 	OpenSessionTargetInput,
 	OpenSessionTargetResult,
@@ -480,6 +481,8 @@ const api = {
 			ipcRenderer.invoke("editorHandoff:open", input) as Promise<OpenSessionTargetResult>,
 		openArtifacts: (input: OpenSessionArtifactsInput) =>
 			ipcRenderer.invoke("editorHandoff:openArtifacts", input) as Promise<OpenSessionTargetResult>,
+		openArtifactInBrowser: (input: OpenArtifactInBrowserInput) =>
+			ipcRenderer.invoke("editorHandoff:openArtifactInBrowser", input) as Promise<void>,
 		copyWorkspacePath: (sessionId: string) =>
 			ipcRenderer.invoke("editorHandoff:copyWorkspacePath", sessionId) as Promise<void>,
 	},

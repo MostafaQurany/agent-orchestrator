@@ -8,6 +8,8 @@ import {
 	type EditorHandoffStateOptions,
 	type EditorId,
 	type EditorPreferenceState,
+	BROWSER_ARTIFACT_EXTENSIONS,
+	type OpenArtifactInBrowserInput,
 	type OpenSessionArtifactsInput,
 	type OpenSessionTargetInput,
 	type OpenSessionTargetResult,
@@ -91,6 +93,8 @@ export type EditorHandoffDeps = {
 	openDirectory: (workspacePath: string) => Promise<void>;
 	/** Shows one file selected in the system file manager. */
 	revealPath: (filePath: string) => Promise<void>;
+	/** Opens one file in the system's default browser. */
+	openInBrowser?: (filePath: string) => Promise<void>;
 	/** Resolves symlinks in an existing path. */
 	realPath: (candidatePath: string) => Promise<string>;
 	/** Puts text on the system clipboard. The workspace path never reaches the renderer. */
@@ -112,6 +116,7 @@ export type EditorHandoff = {
 	setPreferredEditor(editorId: unknown): Promise<EditorId>;
 	open(input: OpenSessionTargetInput): Promise<OpenSessionTargetResult>;
 	openArtifacts(input: OpenSessionArtifactsInput): Promise<OpenSessionTargetResult>;
+	openArtifactInBrowser(input: OpenArtifactInBrowserInput): Promise<void>;
 	copyWorkspacePath(sessionId: string): Promise<void>;
 };
 
@@ -614,6 +619,21 @@ export function createEditorHandoff(deps: EditorHandoffDeps): EditorHandoff {
 			const filePath = input.path === undefined ? undefined : await artifactFilePath(pathAPI(deps.platform), deps.realPath, artifactDir, input.path);
 			await openTarget(target, terminal?.command, filePath ? pathAPI(deps.platform).dirname(filePath) : artifactDir, filePath);
 			return target;
+		},
+
+		async openArtifactInBrowser(input) {
+			const sessionId = typeof input.sessionId === "string" ? input.sessionId.trim() : "";
+			if (!sessionId) throw new Error("Session is required.");
+			if (!deps.openInBrowser) throw new Error("Opening in a browser is not available.");
+			const api = pathAPI(deps.platform);
+			if (typeof input.path !== "string" || !BROWSER_ARTIFACT_EXTENSIONS.has(api.extname(input.path).toLowerCase())) {
+				throw new Error("This file does not open in a browser.");
+			}
+			const artifactDir = await deps.resolveArtifactDir(sessionId);
+			const filePath = await artifactFilePath(api, deps.realPath, artifactDir, input.path);
+			// The resolved file, not just the name asked for, must be one a browser renders.
+			if (!BROWSER_ARTIFACT_EXTENSIONS.has(api.extname(filePath).toLowerCase())) throw new Error("This file does not open in a browser.");
+			await deps.openInBrowser(filePath);
 		},
 
 		async copyWorkspacePath(sessionId) {

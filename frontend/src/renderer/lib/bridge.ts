@@ -154,6 +154,9 @@ export const aoBridge: AoBridge =
 			openArtifacts: async () => {
 				throw new Error("Desktop app is required to open artifacts.");
 			},
+			openArtifactInBrowser: async () => {
+				throw new Error("Desktop app is required to open artifacts.");
+			},
 			copyWorkspacePath: async () => {
 				throw new Error("Desktop app is required to copy a workspace path.");
 			},

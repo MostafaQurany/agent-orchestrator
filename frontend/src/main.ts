@@ -1327,6 +1327,24 @@ function resolveSessionArtifactDirForDesktop(sessionId: string): Promise<string>
 	return fetchDesktopSessionPath(sessionId, "artifacts", "artifactDir", "This session has no artifacts folder yet.");
 }
 
+// A file's own OS handler may not be a browser (a PNG opens in Preview), so on
+// macOS and Windows the default https handler opens it; elsewhere, or when that
+// handler is unknown, the file's handler does.
+async function openFileInDefaultBrowser(filePath: string): Promise<void> {
+	if (process.platform === "darwin" || process.platform === "win32") {
+		const browser = await app.getApplicationInfoForProtocol("https://").catch(() => undefined);
+		if (browser?.path) {
+			if (process.platform === "darwin") {
+				await launchCommand("open", ["-a", browser.path, filePath], path.dirname(filePath));
+			} else {
+				await launchCommand(browser.path, [pathToFileURL(filePath).toString()], path.dirname(filePath));
+			}
+			return;
+		}
+	}
+	await shell.openExternal(pathToFileURL(filePath).toString());
+}
+
 const editorHandoff = createEditorHandoff({
 	platform: process.platform,
 	env: process.env,
@@ -1346,6 +1364,7 @@ const editorHandoff = createEditorHandoff({
 		if (!(await stat(filePath).catch(() => undefined))) throw new Error(`${filePath} does not exist`);
 		shell.showItemInFolder(filePath);
 	},
+	openInBrowser: (filePath) => openFileInDefaultBrowser(filePath),
 	realPath: (candidatePath) => realpath(candidatePath),
 	copyText: (text) => clipboard.writeText(text),
 	discoverTerminalApps: discoverMacTerminalApps,
@@ -2778,6 +2797,10 @@ ipcMain.handle("editorHandoff:open", (event, input) => {
 ipcMain.handle("editorHandoff:openArtifacts", (event, input) => {
 	if (event.sender !== getShellWebContents()) throw new Error("Untrusted editor handoff request.");
 	return editorHandoff.openArtifacts(input && typeof input === "object" ? input : { sessionId: "", targetId: "file-manager" });
+});
+ipcMain.handle("editorHandoff:openArtifactInBrowser", (event, input) => {
+	if (event.sender !== getShellWebContents()) throw new Error("Untrusted editor handoff request.");
+	return editorHandoff.openArtifactInBrowser(input && typeof input === "object" ? input : { sessionId: "", path: "" });
 });
 ipcMain.handle("editorHandoff:copyWorkspacePath", (event, sessionId: string) => {
 	if (event.sender !== getShellWebContents()) throw new Error("Untrusted editor handoff request.");

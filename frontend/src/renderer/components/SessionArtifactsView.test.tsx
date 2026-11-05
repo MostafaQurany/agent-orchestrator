@@ -478,6 +478,51 @@ describe("SessionArtifactsView", () => {
 		expect(openInBrowser).toHaveBeenCalledExactlyOnceWith("http://artifact.localhost/report.html");
 	});
 
+	it("reveals the open artifact in Finder and opens a page in the default browser", async () => {
+		const reveal = vi.spyOn(aoBridge.editorHandoff, "openArtifacts");
+		const openExternal = vi.spyOn(aoBridge.editorHandoff, "openArtifactInBrowser");
+		renderView(<SessionArtifactsView session={session()} />);
+		await userEvent.click(screen.getByRole("button", { name: /^notes\.md/ }));
+		// A Markdown file is not one a browser renders.
+		expect(screen.queryByRole("button", { name: "Open in browser" })).not.toBeInTheDocument();
+		await userEvent.click(screen.getByRole("button", { name: "Back to artifacts" }));
+		await userEvent.click(screen.getByRole("button", { name: /^report\.html/ }));
+		await userEvent.click(screen.getByRole("button", { name: "Open in Finder" }));
+		await userEvent.click(screen.getByRole("button", { name: "Open in browser" }));
+		expect(reveal).toHaveBeenCalledExactlyOnceWith({ sessionId: "sess-1", targetId: "file-manager", path: "report.html" });
+		expect(openExternal).toHaveBeenCalledExactlyOnceWith({ sessionId: "sess-1", path: "report.html" });
+		reveal.mockRestore();
+		openExternal.mockRestore();
+	});
+
+	it("shows why the artifact could not open in the browser", async () => {
+		const openExternal = vi.spyOn(aoBridge.editorHandoff, "openArtifactInBrowser").mockRejectedValue(new Error("This file does not open in a browser."));
+		renderView(<SessionArtifactsView request={{ key: 1, path: "report.html" }} session={session()} />);
+		await userEvent.click(screen.getByRole("button", { name: "Open in browser" }));
+		expect(await screen.findByRole("alert")).toHaveTextContent("This file does not open in a browser.");
+		openExternal.mockRestore();
+	});
+
+	it("zooms an HTML page from the header and its shortcuts, and resets to fit", async () => {
+		renderView(<SessionArtifactsView request={{ key: 1, path: "report.html" }} session={session()} />);
+		const reset = screen.getByRole("button", { name: "Reset zoom" });
+		expect(reset).toHaveTextContent("100%");
+		await userEvent.click(screen.getByRole("button", { name: "Zoom in" }));
+		expect(reset).toHaveTextContent("110%");
+		await userEvent.click(screen.getByRole("button", { name: "Zoom out" }));
+		await userEvent.click(screen.getByRole("button", { name: "Zoom out" }));
+		expect(reset).toHaveTextContent("90%");
+		await userEvent.click(reset);
+		expect(reset).toHaveTextContent("100%");
+		act(() => { screen.getByRole("button", { name: "Zoom in" }).dispatchEvent(new KeyboardEvent("keydown", { bubbles: true, cancelable: true, ctrlKey: true, metaKey: true, key: "=" })); });
+		expect(reset).toHaveTextContent("110%");
+	});
+
+	it("shows no zoom controls when the open file cannot zoom", async () => {
+		renderView(<SessionArtifactsView request={{ key: 1, path: "notes.md" }} session={session()} />);
+		expect(screen.queryByRole("button", { name: "Reset zoom" })).not.toBeInTheDocument();
+	});
+
 	it("never frames an HTML artifact from the daemon's own origin", () => {
 		const html: SessionArtifact = { kind: "html", name: "report.html", path: "report.html", inlineUrl: "http://127.0.0.1:3002/report.html", size: 20, updatedAt: "2026-09-23T00:00:00Z" };
 		renderView(<SessionArtifactsView request={{ key: 1, path: "report.html" }} session={session([html])} />);

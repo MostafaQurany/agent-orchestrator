@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useFileAnnotation } from "../hooks/useFileAnnotation";
 import type { ArtifactSave } from "../hooks/useSessionWorkspaceFiles";
 import { ArtifactSelectionAsk } from "./ArtifactSelectionAsk";
@@ -6,6 +6,7 @@ import { FileContentPane, type FileViewMode } from "./FileContentPane";
 import { isDelimitedTextPath } from "../lib/delimited-text";
 import { isMermaidPath, isSvgPath } from "../lib/image-files";
 import { isMarkdownPreviewPath } from "../lib/markdown-frontmatter";
+import { useArtifactZoomTarget } from "../lib/artifact-zoom";
 import { fileMediaKind } from "../lib/file-media";
 import { cn } from "../lib/utils";
 
@@ -80,6 +81,28 @@ export function ArtifactFileView({
 		[rawUrl, readOnly, cloud, artifactRoot, onAccessRefused, save],
 	);
 	const scrollRef = useRef<HTMLDivElement>(null);
+	const [editing, setEditing] = useState(initialEditing && !readOnly);
+	const editingChanged = useCallback((next: boolean) => {
+		setEditing(next);
+		onEditingChange?.(next);
+	}, [onEditingChange]);
+	// A document scales with a transform and pans by the pane's scroll; media
+	// zoom in their own viewers, and an open editor keeps its own size.
+	const { controller: zoomController, zoom } = useArtifactZoomTarget(!fileMediaKind(path) && !editing);
+	const zoomRef = useRef(zoom);
+	useLayoutEffect(() => {
+		const previous = zoomRef.current;
+		zoomRef.current = zoom;
+		const element = scrollRef.current;
+		const anchor = zoomController?.takeAnchor();
+		if (!element || previous === zoom) return;
+		const rect = element.getBoundingClientRect();
+		const ax = anchor ? anchor.clientX - rect.left : element.clientWidth / 2;
+		const ay = anchor ? anchor.clientY - rect.top : element.clientHeight / 2;
+		const ratio = zoom / previous;
+		element.scrollLeft = (element.scrollLeft + ax) * ratio - ax;
+		element.scrollTop = (element.scrollTop + ay) * ratio - ay;
+	}, [zoom, zoomController]);
 
 	useEffect(() => {
 		if (feedbackRequestKey === undefined) return;
@@ -93,8 +116,10 @@ export function ArtifactFileView({
 	return (
 		<div className={cn("flex h-full min-h-0 flex-col", !fileMediaKind(path) && !isSvgPath(path) ? "ao-document-surface" : "bg-background")}>
 			{/* The app shell is unselectable; an artifact's text is meant to be selected. */}
-			<div className="board-scrollbar min-h-0 flex-1 select-text overflow-x-hidden overflow-y-auto overscroll-contain" ref={scrollRef}>
-				<FileContentPane annotation={annotation} initialEditing={initialEditing && !readOnly} initialMode={initialEditing && !readOnly ? "file" : initialModeFor(path)} hostId={hostId} path={path} sessionId={sessionId} source={source} split={false} toolbarHost={toolbarHost} onEditingChange={onEditingChange} />
+			<div className={cn("board-scrollbar min-h-0 flex-1 select-text overflow-y-auto overscroll-contain", zoom > 1 ? "overflow-x-auto" : "overflow-x-hidden")} ref={scrollRef}>
+				<div className="h-full origin-top-left" style={zoom === 1 ? undefined : { transform: `translateX(${zoom < 1 ? `${(1 - zoom) * 50}%` : "0"}) scale(${zoom})` }}>
+					<FileContentPane annotation={annotation} initialEditing={initialEditing && !readOnly} initialMode={initialEditing && !readOnly ? "file" : initialModeFor(path)} hostId={hostId} path={path} sessionId={sessionId} source={source} split={false} toolbarHost={toolbarHost} onEditingChange={editingChanged} />
+				</div>
 			</div>
 			<ArtifactSelectionAsk annotation={annotation} containerRef={scrollRef} path={path} />
 		</div>

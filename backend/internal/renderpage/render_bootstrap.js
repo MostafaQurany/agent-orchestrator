@@ -1,6 +1,7 @@
 // Runs before the page's own styles and scripts. It hands the page the host
 // theme and display mode, reports the page's content height, and asks the host
-// to open links.
+// to open links. A host that zooms the page (the artifact viewer) gets its
+// pinch and Cmd+=/-/0 forwarded and sets the page zoom.
 // The messages are the MCP Apps postMessage methods T3 Code also uses, so this
 // host could later show upstream MCP apps.
 (function () {
@@ -49,6 +50,24 @@
       history.replaceState(history.state, "", location.pathname + location.search);
     }
   } catch (e) {}
+  // The host owns the zoom level. The page scales with a transform, without
+  // relayout, keeping the point under the pinch (or the viewport's center) in
+  // place; below fit it stays centered. Zoomed, it pans by native scroll.
+  var zoomable = false, zoom = 1;
+  function setZoom(next, anchor) {
+    next = Number(next);
+    if (!(next >= 0.1 && next <= 10) || next === zoom) return;
+    var ax = anchor && typeof anchor.x === "number" ? anchor.x : window.innerWidth / 2;
+    var ay = anchor && typeof anchor.y === "number" ? anchor.y : window.innerHeight / 2;
+    var ratio = next / zoom;
+    var left = (window.scrollX + ax) * ratio - ax, top = (window.scrollY + ay) * ratio - ay;
+    zoom = next;
+    var root = document.documentElement;
+    root.style.transformOrigin = next === 1 ? "" : "0 0";
+    root.style.transform = next === 1 ? "" :
+      "translateX(" + (next < 1 ? (1 - next) * root.clientWidth / 2 : 0) + "px) scale(" + next + ")";
+    window.scrollTo(left, top);
+  }
   window.addEventListener("message", function (e) {
     var d = e.data;
     var p = d && d.params;
@@ -57,8 +76,26 @@
     // MCP Apps context updates may be partial; an absent field is unchanged.
     setDisplay(p.displayMode, p.scrollable, p.wrapContent);
     if (p.styles) apply({ appearance: p.theme, variables: p.styles.variables });
+    if (p.zoomable !== undefined) zoomable = p.zoomable === true;
+    if (p.zoom !== undefined) setZoom(p.zoom, p.zoomAnchor);
   });
   if (!framed) return;
+  function zoomRequest(params) {
+    window.parent.postMessage({ jsonrpc: "2.0", method: "ao/zoom", params: params }, "*");
+  }
+  // A trackpad pinch arrives as a wheel event with ctrlKey.
+  window.addEventListener("wheel", function (e) {
+    if (!zoomable || !e.ctrlKey) return;
+    e.preventDefault();
+    zoomRequest({ deltaY: e.deltaY, deltaMode: e.deltaMode, x: e.clientX, y: e.clientY });
+  }, { passive: false });
+  document.addEventListener("keydown", function (e) {
+    if (!zoomable || e.altKey || !(e.metaKey || e.ctrlKey)) return;
+    var action = e.key === "=" || e.key === "+" ? "in" : e.key === "-" || e.key === "_" ? "out" : e.key === "0" ? "reset" : "";
+    if (!action) return;
+    e.preventDefault();
+    zoomRequest({ action: action });
+  }, true);
   document.addEventListener("click", function (e) {
     if (!e.isTrusted) return;
     var link = e.composedPath().find(function (n) { return n && n.matches && n.matches("a[href]"); });

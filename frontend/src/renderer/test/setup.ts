@@ -245,6 +245,7 @@ if (typeof window !== "undefined") {
 			openArtifacts: async ({ targetId }) => targetId === "terminal"
 				? { id: "terminal", name: "Terminal", kind: "terminal" }
 				: { id: "file-manager", name: "Finder", kind: "file_manager" },
+			openArtifactInBrowser: async () => undefined,
 			copyWorkspacePath: async () => undefined,
 		},
 		telemetry: {

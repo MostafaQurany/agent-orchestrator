@@ -2,10 +2,10 @@ import { useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, u
 import { createPortal } from "react-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { ChevronLeft, Code2, Eye, FolderOpen, Maximize2, MessageSquarePlus, Minimize2, SquareTerminal } from "lucide-react";
+import { ChevronLeft, Code2, ExternalLink, Eye, FolderOpen, Maximize2, MessageSquarePlus, Minimize2, SquareTerminal, ZoomIn, ZoomOut } from "lucide-react";
 import { isInlineArtifactUrl } from "../../shared/agent-page-url";
 import type { OpenArtifactsTargetId } from "../../shared/editor-handoff";
-import { useOpenSessionArtifacts } from "../hooks/useEditorHandoff";
+import { useOpenArtifactInBrowser, useOpenSessionArtifacts } from "../hooks/useEditorHandoff";
 import { cloudArtifactFileUrl, useCloudArtifactAccess, usePinnedArtifactUrl } from "../hooks/useCloudArtifacts";
 import { useRestoreArtifactVersion, type CloudArtifactVersions } from "../hooks/useArtifactVersions";
 import { useArtifactFileChanges } from "../hooks/useArtifactFileChanges";
@@ -14,7 +14,9 @@ import { useCloudMeUserId } from "../hooks/useCloudMeUserId";
 import { useFileAnnotation } from "../hooks/useFileAnnotation";
 import { CloudArtifactAccessError, sessionArtifactFileQueryOptions, type ArtifactSave } from "../hooks/useSessionWorkspaceFiles";
 import { cloudSessionsQueryKey } from "../hooks/useWorkspaceQuery";
+import { ArtifactZoomContext, ArtifactZoomController, MAX_ARTIFACT_ZOOM, MIN_ARTIFACT_ZOOM, useArtifactZoomState, wheelZoomFactor, zoomShortcut } from "../lib/artifact-zoom";
 import { fileMediaKind } from "../lib/file-media";
+import { isSvgPath } from "../lib/image-files";
 import { isMacPlatform, isWindowsPlatform } from "../lib/platform";
 import { artifactChangeError, canChangeSessionArtifacts, type ArtifactRow } from "../lib/artifacts";
 import { sessionUiKey } from "../lib/hosts";
@@ -27,6 +29,7 @@ import { ArtifactGalleryCard } from "./ArtifactGalleryCard";
 import { ArtifactFileView } from "./ArtifactFileView";
 import { CloudArtifactFrame } from "./CloudArtifactFrame";
 import { ArtifactHistoryMenu, ArtifactVersionPreview } from "./ArtifactHistory";
+import { ArtifactPageFrame } from "./ArtifactPageFrame";
 import { Button } from "./ui/button";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
 import { BrowserIcon } from "./icons";
@@ -125,6 +128,91 @@ function OpenCloudArtifactsFolderButton({ orgId, sessionId }: { orgId: string; s
 	);
 }
 
+/** The open artifact's zoom: out, the level (which resets to fit), and in. Shown while the artifact can zoom. */
+function ArtifactZoomControls({ controller }: { controller: ArtifactZoomController }) {
+	const { t } = useTranslation();
+	const { available, zoom } = useArtifactZoomState(controller);
+	if (!available) return null;
+	const controls = [
+		{ label: t("artifacts.zoomOut"), icon: ZoomOut, disabled: zoom <= MIN_ARTIFACT_ZOOM, onClick: () => controller.step(-1) },
+		{ label: t("artifacts.zoomIn"), icon: ZoomIn, disabled: zoom >= MAX_ARTIFACT_ZOOM, onClick: () => controller.step(1) },
+	];
+	const button = ({ label, icon: Icon, disabled, onClick }: (typeof controls)[number]) => (
+		<Tooltip key={label}>
+			<TooltipTrigger asChild>
+				<Button aria-label={label} disabled={disabled} onClick={onClick} size="icon-sm" type="button" variant="quiet">
+					<Icon aria-hidden="true" className="size-icon-sm" />
+				</Button>
+			</TooltipTrigger>
+			<TooltipContent side="bottom">{label}</TooltipContent>
+		</Tooltip>
+	);
+	return (
+		<div aria-label={t("artifacts.zoom")} className="flex shrink-0 items-center" role="group">
+			{button(controls[0])}
+			<Tooltip>
+				<TooltipTrigger asChild>
+					<Button aria-label={t("artifacts.resetZoom")} className="min-w-10 px-1 tabular-nums" onClick={() => controller.reset()} size="sm" type="button" variant="quiet">
+						{Math.round(zoom * 100)}%
+					</Button>
+				</TooltipTrigger>
+				<TooltipContent side="bottom">{t("artifacts.resetZoom")}</TooltipContent>
+			</Tooltip>
+			{button(controls[1])}
+		</div>
+	);
+}
+
+/**
+ * Shows the open artifact in the file manager and, for a file a browser
+ * renders, opens it in the default browser. The main process resolves the
+ * path inside the session's artifact directory; the renderer only names it.
+ */
+function ArtifactOpenButtons({ browser, path, sessionId }: { browser: boolean; path: string; sessionId: string }) {
+	const { t } = useTranslation();
+	const reveal = useOpenSessionArtifacts();
+	const openInBrowser = useOpenArtifactInBrowser();
+	const error = reveal.error ?? openInBrowser.error;
+	const resetReveal = reveal.reset;
+	const resetBrowser = openInBrowser.reset;
+	useEffect(() => {
+		if (!error) return;
+		const timer = setTimeout(() => { resetReveal(); resetBrowser(); }, ERROR_CLEAR_MS);
+		return () => clearTimeout(timer);
+	}, [error, resetBrowser, resetReveal]);
+	const actions = [
+		{ id: "finder", label: t("editor.openInTarget", { name: fileManagerName() }), icon: FolderOpen, pending: reveal.isPending, run: () => { openInBrowser.reset(); reveal.mutate({ sessionId, targetId: "file-manager", path }); } },
+		...(browser ? [{ id: "browser", label: t("artifacts.openInBrowser"), icon: ExternalLink, pending: openInBrowser.isPending, run: () => { reveal.reset(); openInBrowser.mutate({ sessionId, path }); } }] : []),
+	];
+	return (
+		<>
+			{error ? (
+				<span className="min-w-0 max-w-48 truncate text-caption text-destructive" role="alert" title={error.message}>
+					{error.message}
+				</span>
+			) : null}
+			{actions.map(({ id, label, icon: Icon, pending, run }) => (
+				<Tooltip key={id}>
+					<TooltipTrigger asChild>
+						<Button
+							aria-label={label}
+							className="text-muted-foreground hover:text-foreground"
+							disabled={pending}
+							onClick={run}
+							size="icon-sm"
+							type="button"
+							variant="ghost"
+						>
+							<Icon aria-hidden="true" className="size-icon-sm" />
+						</Button>
+					</TooltipTrigger>
+					<TooltipContent side="bottom">{label}</TooltipContent>
+				</Tooltip>
+			))}
+		</>
+	);
+}
+
 // Full screen covers the whole app window; Markdown keeps its shared reading layout.
 const FULLSCREEN_FRAME_CLASS =
 	"fixed inset-0 z-overlay flex flex-col bg-background outline-none";
@@ -143,11 +231,14 @@ function ArtifactViewerFrame({
 	fullscreen,
 	label,
 	onExitFullscreen,
+	onKeyDown,
 }: {
 	children: ReactNode;
 	fullscreen: boolean;
 	label: string;
 	onExitFullscreen: () => void;
+	/** Keys pressed with focus in the viewer, which stays the same node in and out of full screen. */
+	onKeyDown?: (event: KeyboardEvent) => void;
 }) {
 	const [frame] = useState(() => {
 		const element = document.createElement("div");
@@ -157,6 +248,11 @@ function ArtifactViewerFrame({
 	const slotRef = useRef<HTMLDivElement>(null);
 	const switchedRef = useRef(false);
 	useLayoutEffect(() => () => frame.remove(), [frame]);
+	useEffect(() => {
+		if (!onKeyDown) return;
+		frame.addEventListener("keydown", onKeyDown);
+		return () => frame.removeEventListener("keydown", onKeyDown);
+	}, [frame, onKeyDown]);
 	useLayoutEffect(() => {
 		frame.className = fullscreen ? FULLSCREEN_FRAME_CLASS : INLINE_FRAME_CLASS;
 		if (fullscreen) {
@@ -217,6 +313,7 @@ function ArtifactViewerBody({
 	sessionId,
 	toolbarHost,
 	onEditingChange,
+	zoomController,
 }: {
 	artifact: SessionArtifact;
 	/** A cloud file's access prefix, which relative links resolve against. */
@@ -242,6 +339,8 @@ function ArtifactViewerBody({
 	sessionId: string;
 	toolbarHost: HTMLElement | null;
 	onEditingChange?: (editing: boolean) => void;
+	/** The view's zoom, applied by whichever of the file or its page is showing. */
+	zoomController: ArtifactZoomController;
 }) {
 	const restore = useRestoreArtifactVersion({ cloud: cloudVersions, hostId, path: artifact.path, rawUrl: artifact.rawUrl, sessionId });
 	const previewing = previewVersion !== null;
@@ -261,6 +360,7 @@ function ArtifactViewerBody({
 		<div className="flex h-full min-h-0">
 			<div className="relative min-h-0 min-w-0 flex-1">
 				<div className={cn("h-full", (previewing || showingPage) && "hidden")}>
+					<ArtifactZoomContext.Provider value={previewing || showingPage ? null : zoomController}>
 					<ArtifactFileView
 						artifactName={artifact.name}
 						initialEditing={initialEditing}
@@ -279,8 +379,13 @@ function ArtifactViewerBody({
 						toolbarHost={previewing || showingPage ? null : toolbarHost}
 						onEditingChange={onEditingChange}
 					/>
+					</ArtifactZoomContext.Provider>
 				</div>
-				{showingPage ? <iframe className="absolute inset-0 h-full w-full border-0 bg-background" sandbox="allow-scripts allow-same-origin" key={`${page}:${artifact.updatedAt}`} src={page} title={artifact.name} /> : null}
+				{showingPage && page ? (
+					<ArtifactZoomContext.Provider value={zoomController}>
+						<ArtifactPageFrame key={`${page}:${artifact.updatedAt}`} src={page} title={artifact.name} />
+					</ArtifactZoomContext.Provider>
+				) : null}
 				{previewing ? (
 					<ArtifactVersionPreview
 						artifactOrigin={artifactOrigin}
@@ -409,6 +514,8 @@ export function SessionArtifactsView({
 	const [toolbarHost, setToolbarHost] = useState<HTMLElement | null>(null);
 	const [fullscreen, setFullscreen] = useState(false);
 	const [previewVersion, setPreviewVersion] = useState<number | null>(null);
+	const [zoomController] = useState(() => new ArtifactZoomController());
+	const contentRef = useRef<HTMLDivElement>(null);
 	const uiKey = sessionUiKey(session.id, hostId);
 	const { client: cloudClient } = useCloudCp(cloud);
 	// Only the person who started a cloud session shares its files.
@@ -442,6 +549,16 @@ export function SessionArtifactsView({
 	useEffect(() => { setSelectedPath(null); setEditingPath(null); setHtmlSourcePath(null); }, [uiKey]);
 	// History is per file: opening another one starts on its live content.
 	useEffect(() => setPreviewVersion(null), [selectedPath, uiKey]);
+	// Every file, and each look at its page or source, opens at fit.
+	useEffect(() => zoomController.reset(), [htmlSourcePath, previewVersion, selectedPath, uiKey, zoomController]);
+	const onViewerKeyDown = useCallback((event: KeyboardEvent) => {
+		const action = zoomShortcut(event, isMacPlatform());
+		if (!action || event.defaultPrevented || !zoomController.hasTarget()) return;
+		// Ahead of the app menu's own zoom, which would scale the whole window.
+		event.preventDefault();
+		if (action === "reset") zoomController.reset();
+		else zoomController.step(action === "in" ? 1 : -1);
+	}, [zoomController]);
 	const exitFullscreen = useMemo(() => () => setFullscreen(false), []);
 	useEffect(() => {
 		if (request) {
@@ -495,6 +612,20 @@ export function SessionArtifactsView({
 	useEffect(() => {
 		if (!selected) setFullscreen(false);
 	}, [selected]);
+	// A trackpad pinch arrives as a wheel event with ctrlKey: it zooms the
+	// artifact, never the app. A page's own pinch comes through its frame.
+	const hasSelection = Boolean(selected);
+	useEffect(() => {
+		const content = contentRef.current;
+		if (!content) return;
+		const onWheel = (event: WheelEvent) => {
+			if (!event.ctrlKey) return;
+			event.preventDefault();
+			if (zoomController.hasTarget()) zoomController.zoomBy(wheelZoomFactor(event), { clientX: event.clientX, clientY: event.clientY });
+		};
+		content.addEventListener("wheel", onWheel, { passive: false });
+		return () => content.removeEventListener("wheel", onWheel);
+	}, [hasSelection, zoomController]);
 	if (selected) {
 		const fullscreenLabel = t(fullscreen ? "common.returnToPanel" : "common.maximize");
 		const FullscreenIcon = fullscreen ? Minimize2 : Maximize2;
@@ -504,7 +635,7 @@ export function SessionArtifactsView({
 		// `ao preview` on its path; full screen is left first since it covers it.
 		const browserUrl = openInBrowser && !cloud && previewVersion === null ? selected.previewUrl : undefined;
 		return (
-			<ArtifactViewerFrame fullscreen={fullscreen} label={selected.name} onExitFullscreen={exitFullscreen}>
+			<ArtifactViewerFrame fullscreen={fullscreen} label={selected.name} onExitFullscreen={exitFullscreen} onKeyDown={onViewerKeyDown}>
 				{/* One header row: back, the file's menu, the viewer's action buttons, and full screen. */}
 				<div className={cn("flex min-h-9 shrink-0 items-center gap-1 border-b border-border bg-background px-1", fullscreen && isMacPlatform() && FULLSCREEN_MAC_HEADER_CLASS)}>
 					<Button
@@ -542,6 +673,11 @@ export function SessionArtifactsView({
 								<Button aria-label={t("chat.render.viewSource")} aria-pressed={showingHtmlSource} onClick={() => setHtmlSourcePath(selected.path)} size="icon-sm" variant="ghost"><Code2 aria-hidden="true" className="size-icon-sm" /></Button>
 							</div>
 						) : null}
+						<ArtifactZoomControls controller={zoomController} />
+						{/* The file is on this machine only for a local session. */}
+						{!hostId && !cloud && previewVersion === null ? (
+							<ArtifactOpenButtons browser={selected.kind === "html" || Boolean(fileMediaKind(selected.path)) || isSvgPath(selected.path)} path={selected.path} sessionId={session.id} />
+						) : null}
 						{browserUrl ? (
 							<Tooltip>
 								<TooltipTrigger asChild>
@@ -576,7 +712,7 @@ export function SessionArtifactsView({
 						</Tooltip>
 					</div>
 				</div>
-				<div className="min-h-0 flex-1">
+				<div className="min-h-0 flex-1" ref={contentRef}>
 					{cloud && !selected.rawUrl ? (
 						cloudAccess.isError ? (
 							<PanelMessage action={<RetryButton onClick={() => void cloudAccess.refetch()} />}>{t("artifacts.accessError")}</PanelMessage>
@@ -615,6 +751,7 @@ export function SessionArtifactsView({
 							sessionId={session.id}
 							toolbarHost={toolbarHost}
 							onEditingChange={setEditingFile}
+							zoomController={zoomController}
 						/>
 					)}
 				</div>
