@@ -1857,6 +1857,7 @@ export function toSnapshot(wire: WireSnapshot): ConversationSnapshot {
 			state: turn.state as TurnState,
 			providerTurnId: turn.providerTurnId,
 			retryOfTurnId: turn.retryOfTurnId,
+			deliveredWithTurnId: turn.deliveredWithTurnId,
 			hasRetryAttempt: turn.hasRetryAttempt,
 			hasHumanPrompt: turn.hasHumanPrompt,
 			errorMessage: turn.errorMessage,
