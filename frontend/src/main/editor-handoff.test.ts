@@ -489,6 +489,13 @@ describe("editor handoff", () => {
 		expect(openInBrowser).toHaveBeenCalledWith("/ao/data/artifacts/ao-1/plans/report.html");
 	});
 
+	it.each(["clip.mov", "spinner.apng", "talk.opus", "diagram.SVG"])("opens %j, a format the viewer previews, in the browser", async (artifactPath) => {
+		const openInBrowser = vi.fn(async () => undefined);
+		const handoff = createEditorHandoff(deps({ openInBrowser }));
+		await handoff.openArtifactInBrowser({ sessionId: "ao-1", path: artifactPath });
+		expect(openInBrowser).toHaveBeenCalledWith(`/ao/data/artifacts/ao-1/${artifactPath}`);
+	});
+
 	it.each([
 		["../ao-2/page.html", "That artifact is not valid."],
 		["/etc/page.html", "That artifact is not valid."],

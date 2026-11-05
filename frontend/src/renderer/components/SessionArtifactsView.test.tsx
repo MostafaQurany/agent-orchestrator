@@ -535,6 +535,24 @@ describe("SessionArtifactsView", () => {
 		}
 	});
 
+	it("brings the zoom controls back when the pointer nears the bottom of a framed page", async () => {
+		vi.useFakeTimers({ shouldAdvanceTime: true });
+		try {
+			renderView(<SessionArtifactsView request={{ key: 1, path: "report.html" }} session={session()} />);
+			const toolbar = screen.getByRole("group", { name: "Zoom" });
+			await act(() => vi.advanceTimersByTimeAsync(1_500));
+			expect(toolbar).toHaveAttribute("data-state", "hidden");
+			// Pointer moves inside the cross-origin page reach the viewer only through its bridge.
+			const frame = document.querySelector("iframe")!;
+			act(() => {
+				window.dispatchEvent(new MessageEvent("message", { source: frame.contentWindow, data: { jsonrpc: "2.0", method: "ao/zoom", params: { reveal: true } } }));
+			});
+			expect(toolbar).toHaveAttribute("data-state", "visible");
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
 	it("shows no zoom controls when the open file cannot zoom", async () => {
 		renderView(<SessionArtifactsView request={{ key: 1, path: "notes.md" }} session={session()} />);
 		expect(screen.queryByRole("button", { name: "Reset zoom" })).not.toBeInTheDocument();

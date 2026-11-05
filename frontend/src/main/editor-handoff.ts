@@ -8,7 +8,7 @@ import {
 	type EditorHandoffStateOptions,
 	type EditorId,
 	type EditorPreferenceState,
-	BROWSER_ARTIFACT_EXTENSIONS,
+	isBrowserArtifactPath,
 	type OpenArtifactInBrowserInput,
 	type OpenSessionArtifactsInput,
 	type OpenSessionTargetInput,
@@ -626,13 +626,13 @@ export function createEditorHandoff(deps: EditorHandoffDeps): EditorHandoff {
 			if (!sessionId) throw new Error("Session is required.");
 			if (!deps.openInBrowser) throw new Error("Opening in a browser is not available.");
 			const api = pathAPI(deps.platform);
-			if (typeof input.path !== "string" || !BROWSER_ARTIFACT_EXTENSIONS.has(api.extname(input.path).toLowerCase())) {
+			if (typeof input.path !== "string" || !isBrowserArtifactPath(input.path)) {
 				throw new Error("This file does not open in a browser.");
 			}
 			const artifactDir = await deps.resolveArtifactDir(sessionId);
 			const filePath = await artifactFilePath(api, deps.realPath, artifactDir, input.path);
 			// The resolved file, not just the name asked for, must be one a browser renders.
-			if (!BROWSER_ARTIFACT_EXTENSIONS.has(api.extname(filePath).toLowerCase())) throw new Error("This file does not open in a browser.");
+			if (!isBrowserArtifactPath(filePath)) throw new Error("This file does not open in a browser.");
 			await deps.openInBrowser(filePath);
 		},
 

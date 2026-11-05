@@ -78,12 +78,24 @@ export type OpenArtifactInBrowserInput = {
 	path: string;
 };
 
-/** Files a browser renders itself; anything else could hand an executable to its OS handler. */
-export const BROWSER_ARTIFACT_EXTENSIONS: ReadonlySet<string> = new Set([
-	".html", ".htm", ".pdf", ".svg",
-	".png", ".jpg", ".jpeg", ".gif", ".webp", ".avif", ".bmp", ".ico",
-	".mp4", ".m4v", ".webm", ".ogv", ".mp3", ".m4a", ".wav", ".ogg", ".oga", ".opus", ".flac", ".aac",
+/**
+ * Files a browser renders itself: pages, SVG, and every image, video, audio
+ * and PDF format the artifact viewer previews (renderer/lib/file-media.ts).
+ * Anything else could hand an executable to its OS handler.
+ */
+const BROWSER_ARTIFACT_EXTENSIONS: ReadonlySet<string> = new Set([
+	".html", ".htm", ".svg", ".pdf",
+	".apng", ".avif", ".bmp", ".gif", ".ico", ".jpg", ".jpeg", ".png", ".webp",
+	".m4v", ".mov", ".mp4", ".ogv", ".webm",
+	".aac", ".flac", ".m4a", ".mp3", ".oga", ".ogg", ".opus", ".wav",
 ]);
+
+/** Whether an artifact opens in the default browser: the one rule the Open in browser action and the main process share. */
+export function isBrowserArtifactPath(path: string): boolean {
+	const name = path.slice(Math.max(path.lastIndexOf("/"), path.lastIndexOf("\\")) + 1);
+	const dot = name.lastIndexOf(".");
+	return dot > 0 && BROWSER_ARTIFACT_EXTENSIONS.has(name.slice(dot).toLowerCase());
+}
 
 const editorIDSet = new Set<string>(EDITOR_IDS);
 

@@ -23,6 +23,28 @@ class PdfTooLargeError extends Error {
 	}
 }
 
+/**
+ * The scroll offset that keeps a point of the page stack under the anchor as
+ * the pages resize from before to after. Pages scale but the gaps between
+ * them do not, so the point keeps its page and its relative place within it.
+ */
+export function anchoredPdfScrollTop(scrollTop: number, anchorY: number, before: readonly number[], after: readonly number[], gap = PAGE_GAP, padding = PADDING): number {
+	const y = scrollTop + anchorY - padding;
+	let top = 0;
+	let nextTop = 0;
+	let page = 0;
+	while (page < before.length - 1 && y >= top + before[page] + gap) {
+		top += before[page] + gap;
+		nextTop += after[page] + gap;
+		page += 1;
+	}
+	const height = before[page] ?? 0;
+	// Within the page it scales with the page; in the gap below it, it does not.
+	const within = Math.min(y - top, height);
+	const scaled = height > 0 ? within * (after[page] ?? 0) / height : within;
+	return nextTop + scaled + (y - top - within) + padding - anchorY;
+}
+
 let pdfjsModule: Promise<Pdfjs> | null = null;
 
 /** Loads pdf.js and its worker on first use. */
@@ -75,8 +97,13 @@ export function PdfPreview({ cloud = false, firstPageOnly = false, load, onError
 		const ay = anchor ? anchor.clientY - rect.top : element.clientHeight / 2;
 		const ratio = zoom / previous;
 		element.scrollLeft = (element.scrollLeft + ax - PADDING) * ratio + PADDING - ax;
-		element.scrollTop = (element.scrollTop + ay - PADDING) * ratio + PADDING - ay;
-	}, [zoom, zoomController]);
+		// Matches the page heights PdfPage lays out, at the old and new zoom.
+		const heights = (level: number) => loaded && width > 0 ? loaded.sizes.map((size) => Math.floor(size.height * (Math.min(width / size.width, MAX_SCALE) * level))) : [];
+		const before = heights(previous);
+		element.scrollTop = before.length > 0
+			? anchoredPdfScrollTop(element.scrollTop, ay, before, heights(zoom))
+			: (element.scrollTop + ay - PADDING) * ratio + PADDING - ay;
+	}, [loaded, width, zoom, zoomController]);
 
 	useEffect(() => {
 		let cancelled = false;

@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
 import { ChevronLeft, Code2, ExternalLink, Eye, FolderOpen, Maximize2, MessageSquarePlus, Minimize2, SquareTerminal, ZoomIn, ZoomOut } from "lucide-react";
 import { isInlineArtifactUrl } from "../../shared/agent-page-url";
-import type { OpenArtifactsTargetId } from "../../shared/editor-handoff";
+import { isBrowserArtifactPath, type OpenArtifactsTargetId } from "../../shared/editor-handoff";
 import { useOpenArtifactInBrowser, useOpenSessionArtifacts } from "../hooks/useEditorHandoff";
 import { cloudArtifactFileUrl, useCloudArtifactAccess, usePinnedArtifactUrl } from "../hooks/useCloudArtifacts";
 import { useRestoreArtifactVersion, type CloudArtifactVersions } from "../hooks/useArtifactVersions";
@@ -14,9 +14,8 @@ import { useCloudMeUserId } from "../hooks/useCloudMeUserId";
 import { useFileAnnotation } from "../hooks/useFileAnnotation";
 import { CloudArtifactAccessError, sessionArtifactFileQueryOptions, type ArtifactSave } from "../hooks/useSessionWorkspaceFiles";
 import { cloudSessionsQueryKey } from "../hooks/useWorkspaceQuery";
-import { ArtifactZoomContext, ArtifactZoomController, MAX_ARTIFACT_ZOOM, MIN_ARTIFACT_ZOOM, useArtifactZoomState, wheelZoomFactor, zoomShortcut } from "../lib/artifact-zoom";
+import { ArtifactZoomContext, ArtifactZoomController, MAX_ARTIFACT_ZOOM, MIN_ARTIFACT_ZOOM, ZOOM_CONTROLS_REVEAL_PX, useArtifactZoomState, wheelZoomFactor, zoomShortcut } from "../lib/artifact-zoom";
 import { fileMediaKind } from "../lib/file-media";
-import { isSvgPath } from "../lib/image-files";
 import { isMacPlatform, isWindowsPlatform } from "../lib/platform";
 import { artifactChangeError, canChangeSessionArtifacts, type ArtifactRow } from "../lib/artifacts";
 import { sessionUiKey } from "../lib/hosts";
@@ -130,14 +129,13 @@ function OpenCloudArtifactsFolderButton({ orgId, sessionId }: { orgId: string; s
 
 // The zoom toolbar fades out this long after the last zoom or pointer visit.
 const ZOOM_CONTROLS_IDLE_MS = 1_500;
-// A pointer this close to the preview's bottom edge brings the toolbar back.
-const ZOOM_CONTROLS_REVEAL_PX = 96;
 
 /**
  * The open artifact's zoom, floating over the bottom of the preview: out, the
  * level (which resets to fit), and in. Shown while the artifact can zoom, and
  * only while in use: it appears when a file opens, on any zoom (pinch, its
- * buttons or the shortcuts), and when the pointer nears the bottom edge, then
+ * buttons or the shortcuts), and when the pointer nears the bottom edge (over a
+ * framed page, the page reports that through the controller), then
  * fades out once idle. Hover or keyboard focus keeps it up.
  */
 function ArtifactZoomControls({ controller }: { controller: ArtifactZoomController }) {
@@ -163,8 +161,12 @@ function ArtifactZoomControls({ controller }: { controller: ArtifactZoomControll
 			if (area.getBoundingClientRect().bottom - event.clientY <= ZOOM_CONTROLS_REVEAL_PX) reveal();
 		};
 		area.addEventListener("pointermove", onPointerMove);
-		return () => area.removeEventListener("pointermove", onPointerMove);
-	}, [available, reveal]);
+		const unsubscribe = controller.onReveal(reveal);
+		return () => {
+			area.removeEventListener("pointermove", onPointerMove);
+			unsubscribe();
+		};
+	}, [available, controller, reveal]);
 	if (!available) return null;
 	const visible = shown || held;
 	const release = () => {
@@ -729,7 +731,7 @@ export function SessionArtifactsView({
 						) : null}
 						{/* The file is on this machine only for a local session. */}
 						{!hostId && !cloud && previewVersion === null ? (
-							<ArtifactOpenButtons browser={selected.kind === "html" || Boolean(fileMediaKind(selected.path)) || isSvgPath(selected.path)} path={selected.path} sessionId={session.id} />
+							<ArtifactOpenButtons browser={isBrowserArtifactPath(selected.path)} path={selected.path} sessionId={session.id} />
 						) : null}
 						{browserUrl ? (
 							<Tooltip>

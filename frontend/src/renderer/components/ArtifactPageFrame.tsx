@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
-import { useArtifactZoomTarget, wheelZoomFactor } from "../lib/artifact-zoom";
+import { useArtifactZoomTarget, wheelZoomFactor, ZOOM_CONTROLS_REVEAL_PX } from "../lib/artifact-zoom";
 
-type ZoomRequest = { action?: unknown; deltaMode?: unknown; deltaY?: unknown; x?: unknown; y?: unknown };
+type ZoomRequest = { action?: unknown; deltaMode?: unknown; deltaY?: unknown; reveal?: unknown; x?: unknown; y?: unknown };
 
 function readZoomRequest(data: unknown): ZoomRequest | undefined {
 	if (typeof data !== "object" || data === null) return undefined;
@@ -14,7 +14,8 @@ function readZoomRequest(data: unknown): ZoomRequest | undefined {
  * An HTML artifact on its isolated inline origin. The page is cross-origin, so
  * its pinch and zoom keys reach the viewer through the render bootstrap
  * (render_bootstrap.js), and the viewer's zoom goes back to it to apply as
- * browser zoom, around the pinch point.
+ * browser zoom, around the pinch point. The page also reports the pointer
+ * nearing its bottom edge, where the zoom controls float, to bring them back.
  */
 export function ArtifactPageFrame({ src, title }: { src: string; title: string }) {
 	const frameRef = useRef<HTMLIFrameElement>(null);
@@ -30,6 +31,7 @@ export function ArtifactPageFrame({ src, title }: { src: string; title: string }
 				method: "ui/notifications/host-context-changed",
 				params: {
 					zoomable: true,
+					zoomRevealPx: ZOOM_CONTROLS_REVEAL_PX,
 					zoom: controller.getZoom(),
 					...(anchor ? { zoomAnchor: { x: anchor.clientX - rect.left, y: anchor.clientY - rect.top } } : {}),
 				},
@@ -40,7 +42,8 @@ export function ArtifactPageFrame({ src, title }: { src: string; title: string }
 			if (event.source !== frame.contentWindow) return;
 			const request = readZoomRequest(event.data);
 			if (!request) return;
-			if (request.action === "in") controller.step(1);
+			if (request.reveal === true) controller.reveal();
+			else if (request.action === "in") controller.step(1);
 			else if (request.action === "out") controller.step(-1);
 			else if (request.action === "reset") controller.reset();
 			else if (typeof request.deltaY === "number" && typeof request.x === "number" && typeof request.y === "number") {

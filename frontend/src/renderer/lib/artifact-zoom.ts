@@ -5,6 +5,8 @@ export type ZoomAnchor = { clientX: number; clientY: number };
 
 export const MIN_ARTIFACT_ZOOM = 0.25;
 export const MAX_ARTIFACT_ZOOM = 5;
+/** A pointer this close to the preview's bottom edge brings the zoom controls back. */
+export const ZOOM_CONTROLS_REVEAL_PX = 96;
 
 // The steps the zoom buttons and Cmd+=/Cmd+- move between, as a browser's do.
 const ZOOM_STEPS = [0.25, 0.33, 0.5, 0.67, 0.75, 0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.75, 2, 2.5, 3, 4, 5];
@@ -42,11 +44,22 @@ export class ArtifactZoomController {
 	private targets = 0;
 	private anchor: ZoomAnchor | undefined;
 	private listeners = new Set<Listener>();
+	private revealListeners = new Set<Listener>();
 
 	subscribe = (listener: Listener) => {
 		this.listeners.add(listener);
 		return () => { this.listeners.delete(listener); };
 	};
+
+	/** Listens for the pointer nearing the zoom controls somewhere the view cannot see it, as inside a framed page. */
+	onReveal = (listener: Listener) => {
+		this.revealListeners.add(listener);
+		return () => { this.revealListeners.delete(listener); };
+	};
+
+	reveal() {
+		for (const listener of this.revealListeners) listener();
+	}
 
 	getZoom = () => this.zoom;
 	hasTarget = () => this.targets > 0;

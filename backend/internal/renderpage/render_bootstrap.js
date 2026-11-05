@@ -1,7 +1,8 @@
 // Runs before the page's own styles and scripts. It hands the page the host
 // theme and display mode, reports the page's content height, and asks the host
 // to open links. A host that zooms the page (the artifact viewer) gets its
-// pinch and Cmd+=/-/0 forwarded and sets the page zoom.
+// pinch and Cmd+=/-/0 forwarded, hears when the pointer nears the bottom edge
+// where its zoom controls float, and sets the page zoom.
 // The messages are the MCP Apps postMessage methods T3 Code also uses, so this
 // host could later show upstream MCP apps.
 (function () {
@@ -53,7 +54,7 @@
   // The host owns the zoom level. The page scales with a transform, without
   // relayout, keeping the point under the pinch (or the viewport's center) in
   // place; below fit it stays centered. Zoomed, it pans by native scroll.
-  var zoomable = false, zoom = 1;
+  var zoomable = false, zoom = 1, revealPx = 0;
   function setZoom(next, anchor) {
     next = Number(next);
     if (!(next >= 0.1 && next <= 10) || next === zoom) return;
@@ -77,6 +78,7 @@
     setDisplay(p.displayMode, p.scrollable, p.wrapContent);
     if (p.styles) apply({ appearance: p.theme, variables: p.styles.variables });
     if (p.zoomable !== undefined) zoomable = p.zoomable === true;
+    if (typeof p.zoomRevealPx === "number" && p.zoomRevealPx >= 0) revealPx = p.zoomRevealPx;
     if (p.zoom !== undefined) setZoom(p.zoom, p.zoomAnchor);
   });
   if (!framed) return;
@@ -89,6 +91,16 @@
     e.preventDefault();
     zoomRequest({ deltaY: e.deltaY, deltaMode: e.deltaMode, x: e.clientX, y: e.clientY });
   }, { passive: false });
+  // The host's zoom controls float over the page's bottom edge, and pointer
+  // moves inside the frame never reach the host; report entering that zone.
+  var lastReveal = 0;
+  window.addEventListener("pointermove", function (e) {
+    if (!zoomable || !revealPx || window.innerHeight - e.clientY > revealPx) return;
+    var now = Date.now();
+    if (now - lastReveal < 250) return;
+    lastReveal = now;
+    zoomRequest({ reveal: true });
+  }, { passive: true });
   document.addEventListener("keydown", function (e) {
     if (!zoomable || e.altKey || !(e.metaKey || e.ctrlKey)) return;
     var action = e.key === "=" || e.key === "+" ? "in" : e.key === "-" || e.key === "_" ? "out" : e.key === "0" ? "reset" : "";
