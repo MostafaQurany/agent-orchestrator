@@ -434,8 +434,11 @@ const api = {
 	},
 	cloudArtifact: {
 		fetch: (url: string) => ipcRenderer.invoke("cloudArtifact:fetch", url) as Promise<Uint8Array>,
-		/** Copies the given artifacts of a cloud session to its folder under ~/.ao, replacing an earlier copy, and opens it, or shows `reveal` in it. */
-		openFolder: (input: { sessionId: string; files: Array<{ path: string; url: string }>; reveal?: string }) =>
+		/**
+		 * Copies the given artifacts of a cloud session to its folder under ~/.ao, replacing an earlier copy, and opens it,
+		 * or shows `reveal` in it; with `open: "browser"`, opens the copied `reveal` file in the default browser instead.
+		 */
+		openFolder: (input: { sessionId: string; files: Array<{ path: string; url: string }>; reveal?: string; open?: "browser" }) =>
 			ipcRenderer.invoke("cloudArtifact:openFolder", input) as Promise<void>,
 		onFrameNavigated: (listener: (navigation: { url: string; status: number }) => void) => {
 			const wrapped = (_event: Electron.IpcRendererEvent, navigation: { url: string; status: number }) => listener(navigation);

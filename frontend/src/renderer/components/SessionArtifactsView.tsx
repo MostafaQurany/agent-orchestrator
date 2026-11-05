@@ -1,4 +1,4 @@
-import { useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Fragment, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
@@ -14,7 +14,8 @@ import { useCloudMeUserId } from "../hooks/useCloudMeUserId";
 import { useFileAnnotation } from "../hooks/useFileAnnotation";
 import { CloudArtifactAccessError, sessionArtifactFileQueryOptions, type ArtifactSave } from "../hooks/useSessionWorkspaceFiles";
 import { cloudSessionsQueryKey } from "../hooks/useWorkspaceQuery";
-import { ArtifactZoomContext, ArtifactZoomController, MAX_ARTIFACT_ZOOM, MIN_ARTIFACT_ZOOM, ZOOM_CONTROLS_REVEAL_PX, useArtifactZoomState, wheelZoomFactor, zoomShortcut } from "../lib/artifact-zoom";
+import type { ArtifactMenuAction, ArtifactMenuActions } from "../lib/artifact-menu";
+import { ArtifactZoomContext, ArtifactZoomController, MAX_ARTIFACT_ZOOM, MIN_ARTIFACT_ZOOM, ZOOM_CONTROLS_REVEAL_PX, useArtifactZoomState, useArtifactZoomTarget, wheelZoomFactor, zoomShortcut } from "../lib/artifact-zoom";
 import { fileMediaKind } from "../lib/file-media";
 import { isMacPlatform, isWindowsPlatform } from "../lib/platform";
 import { artifactChangeError, canChangeSessionArtifacts, type ArtifactRow } from "../lib/artifacts";
@@ -30,6 +31,7 @@ import { CloudArtifactFrame } from "./CloudArtifactFrame";
 import { ArtifactHistoryMenu, ArtifactVersionPreview } from "./ArtifactHistory";
 import { ArtifactPageFrame } from "./ArtifactPageFrame";
 import { Button } from "./ui/button";
+import { DropdownMenuItem, DropdownMenuRadioGroup, DropdownMenuRadioItem, DropdownMenuSeparator } from "./ui/dropdown-menu";
 import { Tooltip, TooltipContent, TooltipTrigger } from "./ui/tooltip";
 import { BrowserIcon } from "./icons";
 import { FileAnnotationComposer, PanelMessage, RetryButton } from "./WorkspaceDiffView";
@@ -219,6 +221,64 @@ function ArtifactZoomControls({ controller }: { controller: ArtifactZoomControll
 	);
 }
 
+/**
+ * The open file's view actions, in its name menu ahead of the file actions:
+ * an HTML artifact's page or source, the file view's display modes and
+ * actions (Edit, Add feedback), Open in AO Browser, and History. The menu
+ * mounts this each time it opens, so it reads the file view's current actions.
+ */
+function ArtifactViewMenuItems({ fileActions, history, onOpenInAOBrowser, page }: {
+	fileActions: ArtifactMenuActions;
+	history: ReactNode;
+	onOpenInAOBrowser?: () => void;
+	page?: { showingSource: boolean; onShowSource: (source: boolean) => void };
+}) {
+	const { t } = useTranslation();
+	const actions = fileActions.current;
+	const modes = actions.filter((action) => action.mode);
+	const others = actions.filter((action) => !action.mode);
+	const groups: { key: string; node: ReactNode }[] = [];
+	if (page) {
+		groups.push({ key: "page", node: (
+			<DropdownMenuRadioGroup onValueChange={(value) => page.onShowSource(value === "source")} value={page.showingSource ? "source" : "page"}>
+				<DropdownMenuRadioItem value="page"><Eye aria-hidden="true" />{t("files.rendered")}</DropdownMenuRadioItem>
+				<DropdownMenuRadioItem value="source"><Code2 aria-hidden="true" />{t("chat.render.viewSource")}</DropdownMenuRadioItem>
+			</DropdownMenuRadioGroup>
+		) });
+	}
+	if (modes.length > 1) {
+		groups.push({ key: "modes", node: (
+			<DropdownMenuRadioGroup
+				onValueChange={(value) => modes.find((mode) => mode.id === value)?.onSelect()}
+				value={modes.find((mode) => mode.mode?.checked)?.id ?? ""}
+			>
+				{modes.map((mode) => (
+					<DropdownMenuRadioItem disabled={mode.disabled} key={mode.id} value={mode.id}>{mode.icon}{mode.label}</DropdownMenuRadioItem>
+				))}
+			</DropdownMenuRadioGroup>
+		) });
+	}
+	if (others.length > 0 || onOpenInAOBrowser) {
+		groups.push({ key: "actions", node: (
+			<>
+				{others.map((action: ArtifactMenuAction) => (
+					<DropdownMenuItem disabled={action.disabled} key={action.id} onSelect={action.onSelect}>{action.icon}{action.label}</DropdownMenuItem>
+				))}
+				{onOpenInAOBrowser ? (
+					<DropdownMenuItem onSelect={onOpenInAOBrowser}><BrowserIcon aria-hidden="true" />{t("inspector.openInAOBrowser")}</DropdownMenuItem>
+				) : null}
+			</>
+		) });
+	}
+	if (history) groups.push({ key: "history", node: history });
+	return groups.map(({ key, node }, index) => (
+		<Fragment key={key}>
+			{index > 0 ? <DropdownMenuSeparator /> : null}
+			{node}
+		</Fragment>
+	));
+}
+
 // Full screen covers the whole app window; Markdown keeps its shared reading layout.
 const FULLSCREEN_FRAME_CLASS =
 	"fixed inset-0 z-overlay flex flex-col bg-background outline-none";
@@ -319,6 +379,7 @@ function ArtifactViewerBody({
 	sessionId,
 	toolbarHost,
 	onEditingChange,
+	menuActions,
 	zoomController,
 }: {
 	artifact: SessionArtifact;
@@ -347,6 +408,8 @@ function ArtifactViewerBody({
 	onEditingChange?: (editing: boolean) => void;
 	/** The view's zoom, applied by whichever of the file or its page is showing. */
 	zoomController: ArtifactZoomController;
+	/** The header's file menu, which the shown file view fills with its actions. */
+	menuActions: ArtifactMenuActions;
 }) {
 	const restore = useRestoreArtifactVersion({ cloud: cloudVersions, hostId, path: artifact.path, rawUrl: artifact.rawUrl, sessionId });
 	const previewing = previewVersion !== null;
@@ -383,6 +446,7 @@ function ArtifactViewerBody({
 						sendMessage={sendMessage}
 						sessionId={sessionId}
 						toolbarHost={previewing || showingPage ? null : toolbarHost}
+						menuActions={previewing || showingPage ? undefined : menuActions}
 						onEditingChange={onEditingChange}
 					/>
 					</ArtifactZoomContext.Provider>
@@ -421,57 +485,49 @@ function ArtifactViewerBody({
 function CloudHtmlArtifactView({
 	artifact,
 	feedbackRequestKey,
+	menuActions,
 	onAccessRefused,
 	onFeedbackRequestConsumed,
 	onNavigate,
 	sendMessage,
 	sessionId,
-	toolbarHost,
 	url,
 }: {
 	artifact: SessionArtifact;
 	feedbackRequestKey?: number;
+	/** The header's file menu, which takes the feedback action. */
+	menuActions: ArtifactMenuActions;
 	onAccessRefused: () => void;
 	onFeedbackRequestConsumed?: (key: number) => void;
 	/** Called with the path of another file the page opened. */
 	onNavigate: (path: string) => void;
 	sendMessage: (message: string) => Promise<void>;
 	sessionId: string;
-	toolbarHost: HTMLElement | null;
 	url: string;
 }) {
 	const { t } = useTranslation();
 	const annotation = useFileAnnotation(sessionId, { source: artifact.name, sendMessage });
 	const begin = annotation.begin;
 	const path = artifact.path;
+	// The page is in the control plane's opaque origin, so the frame itself
+	// zooms: from the viewer's buttons and shortcuts, not a pinch inside it.
+	const { zoom } = useArtifactZoomTarget();
 	useEffect(() => {
 		if (feedbackRequestKey === undefined) return;
 		begin({ path, side: "file", surface: "focused" });
 		onFeedbackRequestConsumed?.(feedbackRequestKey);
 	}, [feedbackRequestKey, onFeedbackRequestConsumed, path]);
+	const feedbackLabel = t("files.addFeedback");
+	useLayoutEffect(() => {
+		menuActions.current = [{ id: "feedback", label: feedbackLabel, icon: <MessageSquarePlus aria-hidden="true" />, onSelect: () => begin({ path, side: "file", surface: "focused" }) }];
+		return () => { menuActions.current = []; };
+	}, [begin, feedbackLabel, menuActions, path]);
 	const target = annotation.targets.find((item) => item.surface !== "review" && item.path === path && item.side === "file" && item.line == null && item.quote == null);
-	const feedbackButton = (
-		<Tooltip>
-			<TooltipTrigger asChild>
-				<Button
-					aria-label={t("files.addFeedback")}
-					onClick={() => begin({ path, side: "file", surface: "focused" })}
-					size="icon-sm"
-					type="button"
-					variant="quiet"
-				>
-					<MessageSquarePlus aria-hidden="true" className="size-icon-sm" />
-				</Button>
-			</TooltipTrigger>
-			<TooltipContent side="bottom">{t("files.addFeedback")}</TooltipContent>
-		</Tooltip>
-	);
 	return (
 		<div className="flex h-full min-h-0 flex-col">
-			{toolbarHost ? createPortal(feedbackButton, toolbarHost) : null}
 			{target ? <FileAnnotationComposer annotation={annotation} target={target} /> : null}
-			<div className="min-h-0 flex-1">
-				<CloudArtifactFrame onAccessRefused={onAccessRefused} onNavigate={onNavigate} title={artifact.name} url={url} />
+			<div className="relative min-h-0 flex-1 overflow-hidden">
+				<CloudArtifactFrame onAccessRefused={onAccessRefused} onNavigate={onNavigate} title={artifact.name} url={url} zoom={zoom} />
 			</div>
 		</div>
 	);
@@ -521,6 +577,8 @@ export function SessionArtifactsView({
 	const [fullscreen, setFullscreen] = useState(false);
 	const [previewVersion, setPreviewVersion] = useState<number | null>(null);
 	const [zoomController] = useState(() => new ArtifactZoomController());
+	// The shown file view's actions, which its name menu lists.
+	const fileMenuActions = useRef<ArtifactMenuAction[]>([]);
 	const contentRef = useRef<HTMLDivElement>(null);
 	const uiKey = sessionUiKey(session.id, hostId);
 	const { client: cloudClient } = useCloudCp(cloud);
@@ -642,7 +700,7 @@ export function SessionArtifactsView({
 		const browserUrl = openInBrowser && !cloud && previewVersion === null ? selected.previewUrl : undefined;
 		return (
 			<ArtifactViewerFrame fullscreen={fullscreen} label={selected.name} onExitFullscreen={exitFullscreen} onKeyDown={onViewerKeyDown}>
-				{/* One header row: back, the file's menu, the viewer's action buttons, and full screen. */}
+				{/* One header row: back, the file's name menu (its view and file actions), an edit's Save, Share, and full screen. */}
 				<div className={cn("flex min-h-9 shrink-0 items-center gap-1 border-b border-border bg-background px-1", fullscreen && isMacPlatform() && FULLSCREEN_MAC_HEADER_CLASS)}>
 					<Button
 						aria-label={t("artifacts.back")}
@@ -654,14 +712,19 @@ export function SessionArtifactsView({
 						<ChevronLeft aria-hidden="true" className="size-icon-sm" />
 					</Button>
 					<ArtifactActionsMenu artifact={selected} downloadUrl={listed?.rawUrl} className="min-w-0 flex-1 shrink justify-start" hostId={hostId} key={selected.path} session={session}>
-						{selectedFile.data?.binary || (session.cloud && fileMediaKind(selected.path)) ? null : (
-							<ArtifactHistoryMenu cloud={cloudVersions} fallbackHarness={session.provider} hostId={hostId} onSelect={setPreviewVersion} path={selected.path} selectedVersion={previewVersion} sessionId={session.id} />
-						)}
+						<ArtifactViewMenuItems
+							fileActions={fileMenuActions}
+							history={selectedFile.data?.binary || (session.cloud && fileMediaKind(selected.path)) ? null : (
+								<ArtifactHistoryMenu cloud={cloudVersions} fallbackHarness={session.provider} hostId={hostId} onSelect={setPreviewVersion} path={selected.path} selectedVersion={previewVersion} sessionId={session.id} />
+							)}
+							onOpenInAOBrowser={browserUrl ? () => { setFullscreen(false); openInBrowser?.(browserUrl); } : undefined}
+							page={hasHtmlPreview && previewVersion === null ? { showingSource: showingHtmlSource, onShowSource: (source) => setHtmlSourcePath(source ? selected.path : null) } : undefined}
+						/>
 					</ArtifactActionsMenu>
 					<div className="flex shrink-0 items-center gap-0.5">
 						<div className="flex shrink-0 items-center" ref={setToolbarHost} />
-						{/* Beside the viewer's Edit button: the artifact's public link. Only
-						    the person who started a cloud session publishes its files. */}
+						{/* The artifact's public link. Only the person who started a cloud
+						    session publishes its files. */}
 						{editingFile || session.cloud?.shared ? null : session.cloud ? (!cloudOwner ? null : (
 							<ShareArtifactButton
 								file={{ source: "cloud", orgId: session.cloud.orgId, sessionId: session.id, path: selected.path, projectId: "" }}
@@ -672,29 +735,6 @@ export function SessionArtifactsView({
 								file={{ sessionId: session.id, path: selected.path, projectId: session.workspaceId }}
 								name={selected.name}
 							/>
-						) : null}
-						{hasHtmlPreview && previewVersion === null ? (
-							<div className="flex shrink-0 items-center gap-0.5">
-								<Button aria-label={t("files.rendered")} aria-pressed={!showingHtmlSource} onClick={() => setHtmlSourcePath(null)} size="icon-sm" variant="ghost"><Eye aria-hidden="true" className="size-icon-sm" /></Button>
-								<Button aria-label={t("chat.render.viewSource")} aria-pressed={showingHtmlSource} onClick={() => setHtmlSourcePath(selected.path)} size="icon-sm" variant="ghost"><Code2 aria-hidden="true" className="size-icon-sm" /></Button>
-							</div>
-						) : null}
-						{browserUrl ? (
-							<Tooltip>
-								<TooltipTrigger asChild>
-									<Button
-										aria-label={t("inspector.openInAOBrowser")}
-										className="text-muted-foreground hover:text-foreground"
-										onClick={() => { setFullscreen(false); openInBrowser?.(browserUrl); }}
-										size="icon-sm"
-										type="button"
-										variant="ghost"
-									>
-										<BrowserIcon aria-hidden="true" className="size-icon-sm" />
-									</Button>
-								</TooltipTrigger>
-								<TooltipContent side="bottom">{t("inspector.openInAOBrowser")}</TooltipContent>
-							</Tooltip>
 						) : null}
 						<Tooltip>
 							<TooltipTrigger asChild>
@@ -721,17 +761,19 @@ export function SessionArtifactsView({
 							<PanelMessage>{t("files.loading")}</PanelMessage>
 						)
 					) : cloud && selected.kind === "html" && !showingHtmlSource && previewVersion === null ? (
-						<CloudHtmlArtifactView
-							artifact={selected}
-							feedbackRequestKey={request?.feedback && request.path === selected.path ? request.key : undefined}
-							onAccessRefused={accessRefused}
-							onFeedbackRequestConsumed={onRequestConsumed}
-							onNavigate={followFrame}
-							sendMessage={sendCloudFeedback}
-							sessionId={session.id}
-							toolbarHost={toolbarHost}
-							url={selected.rawUrl!}
-						/>
+						<ArtifactZoomContext.Provider value={zoomController}>
+							<CloudHtmlArtifactView
+								artifact={selected}
+								feedbackRequestKey={request?.feedback && request.path === selected.path ? request.key : undefined}
+								menuActions={fileMenuActions}
+								onAccessRefused={accessRefused}
+								onFeedbackRequestConsumed={onRequestConsumed}
+								onNavigate={followFrame}
+								sendMessage={sendCloudFeedback}
+								sessionId={session.id}
+								url={selected.rawUrl!}
+							/>
+						</ArtifactZoomContext.Provider>
 					) : (
 						<ArtifactViewerBody
 							artifact={selected}
@@ -753,6 +795,7 @@ export function SessionArtifactsView({
 							toolbarHost={toolbarHost}
 							onEditingChange={setEditingFile}
 							zoomController={zoomController}
+							menuActions={fileMenuActions}
 						/>
 					)}
 					<ArtifactZoomControls controller={zoomController} />

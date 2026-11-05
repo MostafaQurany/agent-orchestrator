@@ -6,6 +6,7 @@ import { FileContentPane, type FileViewMode } from "./FileContentPane";
 import { isDelimitedTextPath } from "../lib/delimited-text";
 import { isMermaidPath, isSvgPath } from "../lib/image-files";
 import { isMarkdownPreviewPath } from "../lib/markdown-frontmatter";
+import type { ArtifactMenuActions } from "../lib/artifact-menu";
 import { useArtifactZoomTarget } from "../lib/artifact-zoom";
 import { fileMediaKind } from "../lib/file-media";
 import { cn } from "../lib/utils";
@@ -48,6 +49,7 @@ export function ArtifactFileView({
 	sendMessage,
 	sessionId,
 	toolbarHost,
+	menuActions,
 	onEditingChange,
 }: {
 	artifactName: string;
@@ -74,6 +76,8 @@ export function ArtifactFileView({
 	sessionId: string;
 	/** The header the pane renders its mode and action buttons into. */
 	toolbarHost?: HTMLElement | null;
+	/** The host's file menu, which takes the mode and action buttons instead of the header. */
+	menuActions?: ArtifactMenuActions;
 }) {
 	const annotation = useFileAnnotation(sessionId, { hostId, source: artifactName, sendMessage });
 	const source = useMemo(
@@ -118,7 +122,7 @@ export function ArtifactFileView({
 			{/* The app shell is unselectable; an artifact's text is meant to be selected. */}
 			<div className={cn("board-scrollbar min-h-0 flex-1 select-text overflow-y-auto overscroll-contain", zoom > 1 ? "overflow-x-auto" : "overflow-x-hidden")} ref={scrollRef}>
 				<div className="h-full origin-top-left" style={zoom === 1 ? undefined : { transform: `translateX(${zoom < 1 ? `${(1 - zoom) * 50}%` : "0"}) scale(${zoom})` }}>
-					<FileContentPane annotation={annotation} initialEditing={initialEditing && !readOnly} initialMode={initialEditing && !readOnly ? "file" : initialModeFor(path)} hostId={hostId} path={path} sessionId={sessionId} source={source} split={false} toolbarHost={toolbarHost} onEditingChange={editingChanged} />
+					<FileContentPane annotation={annotation} initialEditing={initialEditing && !readOnly} initialMode={initialEditing && !readOnly ? "file" : initialModeFor(path)} hostId={hostId} path={path} sessionId={sessionId} source={source} split={false} toolbarHost={toolbarHost} menuActions={menuActions} onEditingChange={editingChanged} />
 				</div>
 			</div>
 			<ArtifactSelectionAsk annotation={annotation} containerRef={scrollRef} path={path} />

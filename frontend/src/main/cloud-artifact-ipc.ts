@@ -15,6 +15,7 @@ import { Readable, Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
 import type { ReadableStream as NodeReadableStream } from "node:stream/web";
 import type { IpcMain, Session } from "electron";
+import { isBrowserArtifactPath } from "../shared/editor-handoff";
 
 /** The control plane refuses artifact files over 100 MiB. */
 export const MAX_CLOUD_ARTIFACT_BYTES = 100 * 1024 * 1024;
@@ -208,10 +209,22 @@ export function registerCloudArtifactIpc(deps: {
 	ipcMain: Pick<IpcMain, "handle">;
 	/** Opens a folder, or shows a file in its folder, in the file manager. */
 	openInFileManager?: (target: string, isFile: boolean) => Promise<void> | void;
+	/** Opens a file in the system's default browser. */
+	openInBrowser?: (target: string) => Promise<void> | void;
 }): void {
 	deps.ipcMain.handle("cloudArtifact:fetch", (event, url: string) => fetchCloudArtifact(event.sender.session, String(url)));
-	deps.ipcMain.handle("cloudArtifact:openFolder", async (event, input: { sessionId: string; files: CloudArtifactFolderFile[]; reveal?: string }) => {
+	deps.ipcMain.handle("cloudArtifact:openFolder", async (event, input: { sessionId: string; files: CloudArtifactFolderFile[]; reveal?: string; open?: "browser" }) => {
+		// A browser opens only the copied file named by reveal, and only one it renders itself.
+		const browser = input.open === "browser";
+		if (browser && (input.reveal === undefined || !isBrowserArtifactPath(String(input.reveal)))) throw new Error("This file does not open in a browser.");
+		if (browser && !deps.openInBrowser) throw new Error("Opening in a browser is not available.");
 		const target = await copyCloudArtifactsToFolder(event.sender.session, input);
-		await deps.openInFileManager?.(target, input.reveal !== undefined && target !== cloudArtifactsFolder(input.sessionId));
+		const isFile = input.reveal !== undefined && target !== cloudArtifactsFolder(input.sessionId);
+		if (browser) {
+			if (!isFile) throw new Error("That artifact is not valid.");
+			await deps.openInBrowser?.(target);
+			return;
+		}
+		await deps.openInFileManager?.(target, isFile);
 	});
 }

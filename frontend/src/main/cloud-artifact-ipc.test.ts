@@ -169,3 +169,44 @@ describe("pruneCloudArtifactFolders", () => {
 		await expect(pruneCloudArtifactFolders({ AO_DATA_DIR: await mkdtemp(join(tmpdir(), "ao-empty-")) })).resolves.toEqual([]);
 	});
 });
+
+describe("cloudArtifact:openFolder in the browser", () => {
+	const SESSION = "11111111-2222-3333-4444-555555555555";
+
+	async function register() {
+		const { mkdtemp } = await import("node:fs/promises");
+		const { tmpdir } = await import("node:os");
+		const { join } = await import("node:path");
+		vi.stubEnv("AO_DATA_DIR", await mkdtemp(join(tmpdir(), "ao-cloud-browser-")));
+		const registered = new Map<string, (event: unknown, ...args: unknown[]) => unknown>();
+		const openInBrowser = vi.fn();
+		const openInFileManager = vi.fn();
+		registerCloudArtifactIpc({
+			ipcMain: { handle: vi.fn((channel: string, handler: (event: unknown, ...args: unknown[]) => unknown) => registered.set(channel, handler)) },
+			openInBrowser,
+			openInFileManager,
+		});
+		const source = { fetch: vi.fn(async () => new Response("<p>page</p>")) };
+		const open = (input: unknown) => registered.get("cloudArtifact:openFolder")?.({ sender: { session: source } }, input);
+		return { open, openInBrowser, openInFileManager, source };
+	}
+
+	it("opens the copied page, with the session's other files beside it", async () => {
+		const { join } = await import("node:path");
+		const { cloudArtifactsFolder } = await import("./cloud-artifact-ipc");
+		const { open, openInBrowser, openInFileManager } = await register();
+		await open({ sessionId: SESSION, files: [{ path: "report.html", url: `${FILE_URL}&a` }, { path: "chart.png", url: `${FILE_URL}&b` }], reveal: "report.html", open: "browser" });
+		expect(openInBrowser).toHaveBeenCalledExactlyOnceWith(join(cloudArtifactsFolder(SESSION), "report.html"));
+		expect(openInFileManager).not.toHaveBeenCalled();
+		vi.unstubAllEnvs();
+	});
+
+	it("refuses a file a browser does not render, before copying anything", async () => {
+		const { open, openInBrowser, source } = await register();
+		await expect(open({ sessionId: SESSION, files: [{ path: "run.sh", url: `${FILE_URL}&a` }], reveal: "run.sh", open: "browser" })).rejects.toThrow("does not open in a browser");
+		await expect(open({ sessionId: SESSION, files: [{ path: "a.html", url: `${FILE_URL}&a` }], open: "browser" })).rejects.toThrow("does not open in a browser");
+		expect(source.fetch).not.toHaveBeenCalled();
+		expect(openInBrowser).not.toHaveBeenCalled();
+		vi.unstubAllEnvs();
+	});
+});

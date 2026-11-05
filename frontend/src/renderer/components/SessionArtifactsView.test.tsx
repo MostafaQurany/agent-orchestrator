@@ -156,7 +156,9 @@ describe("SessionArtifactsView for a cloud session", () => {
 	it("sends feedback on an html artifact to the worker through the control plane", async () => {
 		renderView(<SessionArtifactsView session={cloudSession()} />);
 		await userEvent.click(screen.getByRole("button", { name: /^report\.html/ }));
-		await userEvent.click(screen.getByRole("button", { name: "Add feedback" }));
+		// The file's actions are in its name menu.
+		await userEvent.click(screen.getByRole("button", { name: "report.html" }));
+		await userEvent.click(screen.getByRole("menuitem", { name: "Add feedback" }));
 		await userEvent.type(screen.getByRole("textbox"), "make the chart wider");
 		await userEvent.keyboard("{Meta>}{Enter}{/Meta}");
 
@@ -460,21 +462,31 @@ describe("SessionArtifactsView", () => {
 		expect(document.querySelector("iframe")).toHaveAttribute("src", "http://ao-inline-artifact.sess-1.localhost/report.html");
 		expect(document.querySelector("iframe")).toHaveAttribute("sandbox", "allow-scripts allow-same-origin");
 		expect(screen.getByTestId("artifact-view").parentElement).toHaveClass("hidden");
-		await userEvent.click(screen.getByRole("button", { name: "View source" }));
+		// Page and source are a single choice in the file's name menu.
+		await userEvent.click(screen.getByRole("button", { name: "report.html" }));
+		expect(screen.getByRole("menuitemradio", { name: "Rich preview" })).toHaveAttribute("aria-checked", "true");
+		await userEvent.click(screen.getByRole("menuitemradio", { name: "View source" }));
 		expect(screen.getByTestId("artifact-view").parentElement).not.toHaveClass("hidden");
 		expect(document.querySelector("iframe")).toBeNull();
-		await userEvent.click(screen.getByRole("button", { name: "Rich preview" }));
+		await userEvent.click(screen.getByRole("button", { name: "report.html" }));
+		await userEvent.click(screen.getByRole("menuitemradio", { name: "Rich preview" }));
 		expect(document.querySelector("iframe")).not.toBeNull();
+		// The header keeps only Share and full screen beside the menu.
+		expect(screen.queryByRole("button", { name: "View source" })).not.toBeInTheDocument();
 	});
 
-	it("opens an HTML artifact in the session Browser from its header", async () => {
+	it("opens an HTML artifact in the session Browser from its menu", async () => {
 		const openInBrowser = vi.fn();
 		renderView(<AppBrowserLinkContext.Provider value={openInBrowser}><SessionArtifactsView session={session()} /></AppBrowserLinkContext.Provider>);
 		await userEvent.click(screen.getByRole("button", { name: /^notes\.md/ }));
-		expect(screen.queryByRole("button", { name: "Open in AO Browser" })).not.toBeInTheDocument();
+		await userEvent.click(screen.getByRole("button", { name: "notes.md" }));
+		expect(screen.queryByRole("menuitem", { name: "Open in AO Browser" })).not.toBeInTheDocument();
+		await userEvent.keyboard("{Escape}");
 		await userEvent.click(screen.getByRole("button", { name: "Back to artifacts" }));
 		await userEvent.click(screen.getByRole("button", { name: /^report\.html/ }));
-		await userEvent.click(screen.getByRole("button", { name: "Open in AO Browser" }));
+		expect(screen.queryByRole("button", { name: "Open in AO Browser" })).not.toBeInTheDocument();
+		await userEvent.click(screen.getByRole("button", { name: "report.html" }));
+		await userEvent.click(screen.getByRole("menuitem", { name: "Open in AO Browser" }));
 		expect(openInBrowser).toHaveBeenCalledExactlyOnceWith("http://artifact.localhost/report.html");
 	});
 
@@ -494,6 +506,18 @@ describe("SessionArtifactsView", () => {
 		await userEvent.click(screen.getByRole("menuitem", { name: "Open in browser" }));
 		expect(openExternal).toHaveBeenCalledExactlyOnceWith({ sessionId: "sess-1", path: "report.html" });
 		openExternal.mockRestore();
+	});
+
+	it("opens a cloud session's page in the default browser from its copy", async () => {
+		listArtifactsMock.mockResolvedValue({ artifacts: [{ path: "report.html", updatedAt: "2026-09-23T00:00:00Z" }, { path: "chart.png", updatedAt: "2026-09-23T00:00:00Z" }] });
+		createArtifactAccessMock.mockResolvedValue({ filesPrefix: "/api/cloud/v1/artifact-files/token/" });
+		const openFolder = vi.spyOn(aoBridge.cloudArtifact, "openFolder").mockResolvedValue(undefined);
+		renderView(<SessionArtifactsView request={{ key: 1, path: "report.html" }} session={{ ...cloudSession(), cloud: { orgId: "org-1", createdByUserId: "me-1" } } as WorkspaceSession} />);
+		await userEvent.click(screen.getByRole("button", { name: "report.html" }));
+		await userEvent.click(screen.getByRole("menuitem", { name: "Open in browser" }));
+		// Every file is copied, so the page's own files load beside it.
+		await vi.waitFor(() => expect(openFolder).toHaveBeenCalledExactlyOnceWith(expect.objectContaining({ sessionId: "cloud-1", reveal: "report.html", open: "browser", files: expect.arrayContaining([expect.objectContaining({ path: "chart.png" })]) })));
+		openFolder.mockRestore();
 	});
 
 	it("shows why the artifact could not open in the browser", async () => {

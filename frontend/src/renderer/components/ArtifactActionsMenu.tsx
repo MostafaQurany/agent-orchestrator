@@ -37,7 +37,9 @@ function terminalName(): string {
  * Copies a cloud session's artifact files to its folder under ~/.ao and opens
  * it in the file manager, or, given `reveal`, copies only that artifact and
  * shows it there: a cloud session's artifacts live in the control plane, so
- * this is the folder a local session's "Show in" opens.
+ * this is the folder a local session's "Show in" opens. With `browser`, it
+ * copies them all, so a page's own files load, and opens `reveal` in the
+ * default browser.
  */
 export async function openCloudArtifactsFolder(
 	client: CloudCpClient,
@@ -45,9 +47,10 @@ export async function openCloudArtifactsFolder(
 	orgId: string,
 	sessionId: string,
 	reveal?: Pick<SessionArtifact, "path" | "updatedAt">,
+	browser = false,
 ): Promise<void> {
 	const [files, access] = await Promise.all([
-		reveal ? [reveal] : client.listSessionArtifacts(orgId, sessionId).then(({ artifacts }) => artifacts),
+		reveal && !browser ? [reveal] : client.listSessionArtifacts(orgId, sessionId).then(({ artifacts }) => artifacts),
 		client.createSessionArtifactAccess(orgId, sessionId),
 	]);
 	const root = `${baseUrl.replace(/\/+$/, "")}${access.filesPrefix}`;
@@ -55,6 +58,7 @@ export async function openCloudArtifactsFolder(
 		sessionId,
 		files: files.map((file) => ({ path: file.path, url: cloudArtifactFileUrl(root, file.path, file.updatedAt) })),
 		reveal: reveal?.path,
+		...(browser ? { open: "browser" as const } : {}),
 	});
 }
 
@@ -136,12 +140,22 @@ export function ArtifactActionsMenu({
 		setCopyError("");
 		open.mutate({ sessionId: session.id, targetId, path: artifact.path });
 	};
-	// The main process resolves the path inside the session's artifact directory.
-	const openInBrowser = () => {
+	// The main process resolves the path inside the session's artifact
+	// directory; a cloud session's file opens from its copy under ~/.ao.
+	const openInBrowser = async () => {
 		open.reset();
 		setCopyError("");
-		browser.mutate({ sessionId: session.id, path: artifact.path });
+		if (!session.cloud) {
+			browser.mutate({ sessionId: session.id, path: artifact.path });
+			return;
+		}
+		try {
+			await openCloudArtifactsFolder(cloudClient, cloudBaseUrl, session.cloud.orgId, session.id, artifact, true);
+		} catch (error) {
+			setCopyError(error instanceof Error ? error.message : String(error));
+		}
 	};
+	const browserReadable = isBrowserArtifactPath(artifact.path);
 	const revealCloud = async () => {
 		open.reset();
 		setCopyError("");
@@ -296,8 +310,8 @@ export function ArtifactActionsMenu({
 										<SquareTerminal aria-hidden="true" />
 										{t("artifacts.showIn", { name: terminalName() })}
 									</DropdownMenuItem>
-									{isBrowserArtifactPath(artifact.path) ? (
-										<DropdownMenuItem onSelect={openInBrowser}>
+									{browserReadable ? (
+										<DropdownMenuItem onSelect={() => void openInBrowser()}>
 											<ExternalLink aria-hidden="true" />
 											{t("artifacts.openInBrowser")}
 										</DropdownMenuItem>
@@ -313,6 +327,12 @@ export function ArtifactActionsMenu({
 								<FolderOpen aria-hidden="true" />
 								{t("artifacts.showIn", { name: fileManagerName() })}
 							</DropdownMenuItem>
+							{!sidebar && browserReadable ? (
+								<DropdownMenuItem onSelect={() => void openInBrowser()}>
+									<ExternalLink aria-hidden="true" />
+									{t("artifacts.openInBrowser")}
+								</DropdownMenuItem>
+							) : null}
 							{!sidebar ? <DropdownMenuSeparator /> : null}
 						</>
 					) : null}

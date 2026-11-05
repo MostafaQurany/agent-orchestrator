@@ -3264,6 +3264,7 @@ registerChatImageIpc({
 });
 registerCloudArtifactIpc({
 	ipcMain,
+	openInBrowser: (target) => openFileInDefaultBrowser(target),
 	openInFileManager: async (target, isFile) => {
 		if (isFile) shell.showItemInFolder(target);
 		else {
