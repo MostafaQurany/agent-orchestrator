@@ -592,7 +592,7 @@ title: test
 status: draft
 ---
 
-## Phase 1: 
+## Phase 1:
 ### T-1: Start
 - [ ] ok
 `,
@@ -735,7 +735,7 @@ status: draft
 ---
 
 ## Phase 1: Setup
-### TASK-1: 
+### TASK-1:
 - [ ] ok
 `,
 			errLine:     8,
@@ -831,7 +831,7 @@ status: draft
 
 ## Phase 1: Setup
 ### TASK-1: Check
-- [ ] 
+- [ ]
 `,
 			errLine:     9,
 			errContains: "checklist item text cannot be empty",
