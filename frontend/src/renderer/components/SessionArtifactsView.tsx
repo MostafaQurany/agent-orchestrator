@@ -128,7 +128,10 @@ function OpenCloudArtifactsFolderButton({ orgId, sessionId }: { orgId: string; s
 	);
 }
 
-/** The open artifact's zoom: out, the level (which resets to fit), and in. Shown while the artifact can zoom. */
+/**
+ * The open artifact's zoom, floating over the bottom of the preview: out, the
+ * level (which resets to fit), and in. Shown while the artifact can zoom.
+ */
 function ArtifactZoomControls({ controller }: { controller: ArtifactZoomController }) {
 	const { t } = useTranslation();
 	const { available, zoom } = useArtifactZoomState(controller);
@@ -144,11 +147,15 @@ function ArtifactZoomControls({ controller }: { controller: ArtifactZoomControll
 					<Icon aria-hidden="true" className="size-icon-sm" />
 				</Button>
 			</TooltipTrigger>
-			<TooltipContent side="bottom">{label}</TooltipContent>
+			<TooltipContent side="top">{label}</TooltipContent>
 		</Tooltip>
 	);
 	return (
-		<div aria-label={t("artifacts.zoom")} className="flex shrink-0 items-center" role="group">
+		<div
+			aria-label={t("artifacts.zoom")}
+			className="absolute bottom-3 left-1/2 z-10 flex -translate-x-1/2 items-center gap-px rounded-lg border border-(--color-border-overlay) bg-overlay p-0.5 text-popover-foreground shadow-(--shadow-popover)"
+			role="group"
+		>
 			{button(controls[0])}
 			<Tooltip>
 				<TooltipTrigger asChild>
@@ -156,7 +163,7 @@ function ArtifactZoomControls({ controller }: { controller: ArtifactZoomControll
 						{Math.round(zoom * 100)}%
 					</Button>
 				</TooltipTrigger>
-				<TooltipContent side="bottom">{t("artifacts.resetZoom")}</TooltipContent>
+				<TooltipContent side="top">{t("artifacts.resetZoom")}</TooltipContent>
 			</Tooltip>
 			{button(controls[1])}
 		</div>
@@ -673,7 +680,6 @@ export function SessionArtifactsView({
 								<Button aria-label={t("chat.render.viewSource")} aria-pressed={showingHtmlSource} onClick={() => setHtmlSourcePath(selected.path)} size="icon-sm" variant="ghost"><Code2 aria-hidden="true" className="size-icon-sm" /></Button>
 							</div>
 						) : null}
-						<ArtifactZoomControls controller={zoomController} />
 						{/* The file is on this machine only for a local session. */}
 						{!hostId && !cloud && previewVersion === null ? (
 							<ArtifactOpenButtons browser={selected.kind === "html" || Boolean(fileMediaKind(selected.path)) || isSvgPath(selected.path)} path={selected.path} sessionId={session.id} />
@@ -712,7 +718,7 @@ export function SessionArtifactsView({
 						</Tooltip>
 					</div>
 				</div>
-				<div className="min-h-0 flex-1" ref={contentRef}>
+				<div className="relative min-h-0 flex-1" ref={contentRef}>
 					{cloud && !selected.rawUrl ? (
 						cloudAccess.isError ? (
 							<PanelMessage action={<RetryButton onClick={() => void cloudAccess.refetch()} />}>{t("artifacts.accessError")}</PanelMessage>
@@ -754,6 +760,7 @@ export function SessionArtifactsView({
 							zoomController={zoomController}
 						/>
 					)}
+					<ArtifactZoomControls controller={zoomController} />
 				</div>
 			</ArtifactViewerFrame>
 		);
