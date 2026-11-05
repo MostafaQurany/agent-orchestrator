@@ -281,9 +281,11 @@ const ShellTerminalTabEntry = memo(function ShellTerminalTabEntry({
 	onSelect,
 	onClose,
 	onRename,
+	stripShellHandleIds,
 }: {
 	tabKey: string;
 	shell: ShellTerminal;
+	stripShellHandleIds: readonly string[];
 	isActive: boolean;
 	onSelect: (handleId: string) => void;
 	onClose: (handleId: string) => void;
@@ -298,6 +300,7 @@ const ShellTerminalTabEntry = memo(function ShellTerminalTabEntry({
 				onRename={onRename ? (title) => onRename(shell.handleId, title) : undefined}
 				onSelect={() => onSelect(shell.handleId)}
 				shell={shell}
+				stripShellHandleIds={stripShellHandleIds}
 			/>
 		</DraggableWorkspaceTab>
 	);
@@ -2385,6 +2388,15 @@ function ChatHeader({
 	const selectShellTerminal = useStableCallback(onSelectShellTerminal);
 	const closeShellTerminal = useStableCallback(onCloseShellTerminal);
 	const renameShellTerminal = useStableCallback(onRenameShellTerminal);
+	// Keyed on the joined ids so memoized shell tabs keep the same array
+	// across renders that don't add, remove or reorder a shell.
+	const stripShellHandleIdsKey = orderedAuxiliaryTabs
+		.flatMap((tab) => (tab.kind === "shell" ? [tab.terminal.handleId] : []))
+		.join("\n");
+	const stripShellHandleIds = useMemo(
+		() => (stripShellHandleIdsKey ? stripShellHandleIdsKey.split("\n") : []),
+		[stripShellHandleIdsKey],
+	);
 	// The chat tab is "selected" only when neither terminal pane is the body.
 	const timelineActive = !workspaceActiveTabKey && !reviewerActive && !shellActiveHandleId;
 	// Match CenterPane: when the sidebar is off-canvas, the fixed TitlebarNav
@@ -2458,6 +2470,7 @@ function ChatHeader({
 											onRename={onRenameShellTerminal ? renameShellTerminal : undefined}
 											onSelect={selectShellTerminal}
 											shell={tab.terminal}
+											stripShellHandleIds={stripShellHandleIds}
 											tabKey={tab.key}
 										/>
 									) : (

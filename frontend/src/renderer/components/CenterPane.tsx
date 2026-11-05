@@ -250,6 +250,7 @@ export function CenterPane({
 		[reviewerChat, reviewerTerminal, shellTerminals, workspaceTabs],
 	);
 	const availableAuxiliaryKeys = useMemo(() => auxiliaryTabs.map((tab) => tab.key), [auxiliaryTabs]);
+	const stripShellHandleIds = useMemo(() => shellTerminals.map((terminal) => terminal.handleId), [shellTerminals]);
 	const orderedAuxiliaryTabs = useMemo(() => {
 		const preferred = auxiliaryTabOrder ?? (sessionId ? (tabOrderBySession[sessionId] ?? []) : []);
 		const byKey = new Map(auxiliaryTabs.map((tab) => [tab.key, tab]));
@@ -594,6 +595,7 @@ export function CenterPane({
 														}
 														onSelect={() => onSelectShellTerminal?.(tab.terminal.handleId)}
 														shell={tab.terminal}
+														stripShellHandleIds={stripShellHandleIds}
 													/>
 												) : (
 													tab.tab.content
