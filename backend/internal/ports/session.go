@@ -47,6 +47,8 @@ type SpawnConfig struct {
 	Branch           string
 	RequireNewBranch bool
 	Prompt           string
+	PlanID           string
+	TaskID           string
 	// AgentConfig overrides the resolved project/role agent config for this
 	// single spawn. Empty fields keep the project defaults.
 	AgentConfig AgentConfig

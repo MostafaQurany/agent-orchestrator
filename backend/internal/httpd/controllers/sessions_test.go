@@ -2000,6 +2000,23 @@ func TestSessionsAPI_SpawnPassesEffortToService(t *testing.T) {
 	}
 }
 
+func TestSessionsAPI_SpawnPassesPlanAndTaskIDToService(t *testing.T) {
+	svc := newFakeSessionService()
+	srv := newSessionTestServer(t, svc)
+
+	body, status, _ := doRequest(t, srv, "POST", "/api/v1/sessions",
+		`{"projectId":"ao","kind":"worker","harness":"codex","prompt":"fix","planId":"plan-123","taskId":"task-456"}`)
+	if status != http.StatusCreated {
+		t.Fatalf("POST session = %d, want 201; body=%s", status, body)
+	}
+	if svc.lastSpawn.PlanID != "plan-123" {
+		t.Fatalf("service PlanID = %q, want plan-123", svc.lastSpawn.PlanID)
+	}
+	if svc.lastSpawn.TaskID != "task-456" {
+		t.Fatalf("service TaskID = %q, want task-456", svc.lastSpawn.TaskID)
+	}
+}
+
 func TestSessionsAPI_SpawnPassesParentSessionToService(t *testing.T) {
 	svc := newFakeSessionService()
 	srv := newSessionTestServer(t, svc)

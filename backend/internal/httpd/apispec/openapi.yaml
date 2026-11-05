@@ -19209,6 +19209,8 @@ components:
           items:
             type: string
           type: array
+        requirePlan:
+          type: boolean
         reviewers:
           items:
             $ref: '#/components/schemas/DomainReviewerConfig'
@@ -21670,6 +21672,9 @@ components:
           type: string
         parentSessionId:
           type: string
+        planId:
+          maxLength: 64
+          type: string
         projectId:
           type: string
         prompt:
@@ -21678,6 +21683,9 @@ components:
         requestedOutput:
           enum:
           - artifact
+          type: string
+        taskId:
+          maxLength: 64
           type: string
         trackerProvider:
           enum:

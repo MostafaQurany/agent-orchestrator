@@ -577,6 +577,11 @@ type SpawnSessionRequest struct {
 	// Effort is the optional reasoning level for the selected model.
 	Effort string `json:"effort,omitempty" maxLength:"32"`
 
+	// PlanID is the optional planning artifact or plan reference associated with this spawn.
+	PlanID string `json:"planId,omitempty" maxLength:"64"`
+	// TaskID is the optional task reference within a plan associated with this spawn.
+	TaskID string `json:"taskId,omitempty" maxLength:"64"`
+
 	// RequestedOutput asks for a specific deliverable. artifact tells the worker to
 	// write a file in its artifact directory instead of opening a PR. Omitted is
 	// the ordinary task flow.

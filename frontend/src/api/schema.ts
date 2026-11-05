@@ -6690,6 +6690,7 @@ export interface components {
             orchestratorRulesFile?: string;
             postCreate?: string[];
             preRemove?: string[];
+            requirePlan?: boolean;
             reviewers?: components["schemas"]["DomainReviewerConfig"][];
             sessionPrefix?: string;
             symlinks?: string[];
@@ -7667,10 +7668,12 @@ export interface components {
             mode?: "chat" | "tui";
             model?: string;
             parentSessionId?: string;
+            planId?: string;
             projectId?: string;
             prompt?: string;
             /** @enum {string} */
             requestedOutput?: "artifact";
+            taskId?: string;
             /** @enum {string} */
             trackerProvider?: "github" | "gitlab";
         };
