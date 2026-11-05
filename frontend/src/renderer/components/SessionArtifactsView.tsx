@@ -2,10 +2,10 @@ import { useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, u
 import { createPortal } from "react-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { ChevronLeft, Code2, ExternalLink, Eye, FolderOpen, Maximize2, MessageSquarePlus, Minimize2, SquareTerminal, ZoomIn, ZoomOut } from "lucide-react";
+import { ChevronLeft, Code2, Eye, FolderOpen, Maximize2, MessageSquarePlus, Minimize2, SquareTerminal, ZoomIn, ZoomOut } from "lucide-react";
 import { isInlineArtifactUrl } from "../../shared/agent-page-url";
-import { isBrowserArtifactPath, type OpenArtifactsTargetId } from "../../shared/editor-handoff";
-import { useOpenArtifactInBrowser, useOpenSessionArtifacts } from "../hooks/useEditorHandoff";
+import type { OpenArtifactsTargetId } from "../../shared/editor-handoff";
+import { useOpenSessionArtifacts } from "../hooks/useEditorHandoff";
 import { cloudArtifactFileUrl, useCloudArtifactAccess, usePinnedArtifactUrl } from "../hooks/useCloudArtifacts";
 import { useRestoreArtifactVersion, type CloudArtifactVersions } from "../hooks/useArtifactVersions";
 import { useArtifactFileChanges } from "../hooks/useArtifactFileChanges";
@@ -216,56 +216,6 @@ function ArtifactZoomControls({ controller }: { controller: ArtifactZoomControll
 			</Tooltip>
 			{button(controls[1])}
 		</div>
-	);
-}
-
-/**
- * Shows the open artifact in the file manager and, for a file a browser
- * renders, opens it in the default browser. The main process resolves the
- * path inside the session's artifact directory; the renderer only names it.
- */
-function ArtifactOpenButtons({ browser, path, sessionId }: { browser: boolean; path: string; sessionId: string }) {
-	const { t } = useTranslation();
-	const reveal = useOpenSessionArtifacts();
-	const openInBrowser = useOpenArtifactInBrowser();
-	const error = reveal.error ?? openInBrowser.error;
-	const resetReveal = reveal.reset;
-	const resetBrowser = openInBrowser.reset;
-	useEffect(() => {
-		if (!error) return;
-		const timer = setTimeout(() => { resetReveal(); resetBrowser(); }, ERROR_CLEAR_MS);
-		return () => clearTimeout(timer);
-	}, [error, resetBrowser, resetReveal]);
-	const actions = [
-		{ id: "finder", label: t("editor.openInTarget", { name: fileManagerName() }), icon: FolderOpen, pending: reveal.isPending, run: () => { openInBrowser.reset(); reveal.mutate({ sessionId, targetId: "file-manager", path }); } },
-		...(browser ? [{ id: "browser", label: t("artifacts.openInBrowser"), icon: ExternalLink, pending: openInBrowser.isPending, run: () => { reveal.reset(); openInBrowser.mutate({ sessionId, path }); } }] : []),
-	];
-	return (
-		<>
-			{error ? (
-				<span className="min-w-0 max-w-48 truncate text-caption text-destructive" role="alert" title={error.message}>
-					{error.message}
-				</span>
-			) : null}
-			{actions.map(({ id, label, icon: Icon, pending, run }) => (
-				<Tooltip key={id}>
-					<TooltipTrigger asChild>
-						<Button
-							aria-label={label}
-							className="text-muted-foreground hover:text-foreground"
-							disabled={pending}
-							onClick={run}
-							size="icon-sm"
-							type="button"
-							variant="ghost"
-						>
-							<Icon aria-hidden="true" className="size-icon-sm" />
-						</Button>
-					</TooltipTrigger>
-					<TooltipContent side="bottom">{label}</TooltipContent>
-				</Tooltip>
-			))}
-		</>
 	);
 }
 
@@ -728,10 +678,6 @@ export function SessionArtifactsView({
 								<Button aria-label={t("files.rendered")} aria-pressed={!showingHtmlSource} onClick={() => setHtmlSourcePath(null)} size="icon-sm" variant="ghost"><Eye aria-hidden="true" className="size-icon-sm" /></Button>
 								<Button aria-label={t("chat.render.viewSource")} aria-pressed={showingHtmlSource} onClick={() => setHtmlSourcePath(selected.path)} size="icon-sm" variant="ghost"><Code2 aria-hidden="true" className="size-icon-sm" /></Button>
 							</div>
-						) : null}
-						{/* The file is on this machine only for a local session. */}
-						{!hostId && !cloud && previewVersion === null ? (
-							<ArtifactOpenButtons browser={isBrowserArtifactPath(selected.path)} path={selected.path} sessionId={session.id} />
 						) : null}
 						{browserUrl ? (
 							<Tooltip>

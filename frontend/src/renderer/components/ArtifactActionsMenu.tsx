@@ -1,9 +1,10 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import { useTranslation } from "react-i18next";
-import { ArrowUpRight, ChevronDown, Copy, Download, Ellipsis, FolderOpen, Pencil, Pin, PinOff, SquareTerminal, Trash2 } from "lucide-react";
+import { ArrowUpRight, ChevronDown, Copy, Download, Ellipsis, ExternalLink, FolderOpen, Pencil, Pin, PinOff, SquareTerminal, Trash2 } from "lucide-react";
 import type { OpenArtifactsTargetId } from "../../shared/editor-handoff";
-import { useOpenSessionArtifacts } from "../hooks/useEditorHandoff";
+import { isBrowserArtifactPath } from "../../shared/editor-handoff";
+import { useOpenArtifactInBrowser, useOpenSessionArtifacts } from "../hooks/useEditorHandoff";
 import { deleteSessionArtifactFile, sessionArtifactFileQueryOptions } from "../hooks/useSessionWorkspaceFiles";
 import { cloudSessionsQueryKey, workspaceQueryKeyForHost } from "../hooks/useWorkspaceQuery";
 import { useCloudCp } from "../hooks/useCloudCp";
@@ -99,6 +100,7 @@ export function ArtifactActionsMenu({
 	const { t } = useTranslation();
 	const queryClient = useQueryClient();
 	const open = useOpenSessionArtifacts();
+	const browser = useOpenArtifactInBrowser();
 	const [copyError, setCopyError] = useState("");
 	const [confirmingDelete, setConfirmingDelete] = useState(false);
 	const [menuOpen, setMenuOpen] = useState(false);
@@ -130,8 +132,15 @@ export function ArtifactActionsMenu({
 		setConfirmingDelete(true);
 	};
 	const reveal = (targetId: OpenArtifactsTargetId) => {
+		browser.reset();
 		setCopyError("");
 		open.mutate({ sessionId: session.id, targetId, path: artifact.path });
+	};
+	// The main process resolves the path inside the session's artifact directory.
+	const openInBrowser = () => {
+		open.reset();
+		setCopyError("");
+		browser.mutate({ sessionId: session.id, path: artifact.path });
 	};
 	const revealCloud = async () => {
 		open.reset();
@@ -168,16 +177,18 @@ export function ArtifactActionsMenu({
 	};
 	const copyable = owner && !fileMediaKind(artifact.path);
 
-	const error = open.error?.message || copyError;
+	const error = open.error?.message || browser.error?.message || copyError;
 	const resetOpen = open.reset;
+	const resetBrowser = browser.reset;
 	useEffect(() => {
 		if (!error) return;
 		const timer = setTimeout(() => {
 			resetOpen();
+			resetBrowser();
 			setCopyError("");
 		}, ERROR_CLEAR_MS);
 		return () => clearTimeout(timer);
-	}, [error, resetOpen]);
+	}, [error, resetBrowser, resetOpen]);
 	const menuTrigger = (
 		<DropdownMenuTrigger asChild>
 			<Button
@@ -285,6 +296,12 @@ export function ArtifactActionsMenu({
 										<SquareTerminal aria-hidden="true" />
 										{t("artifacts.showIn", { name: terminalName() })}
 									</DropdownMenuItem>
+									{isBrowserArtifactPath(artifact.path) ? (
+										<DropdownMenuItem onSelect={openInBrowser}>
+											<ExternalLink aria-hidden="true" />
+											{t("artifacts.openInBrowser")}
+										</DropdownMenuItem>
+									) : null}
 									{copyable || session.cloud ? <DropdownMenuSeparator /> : null}
 								</>
 							) : null}

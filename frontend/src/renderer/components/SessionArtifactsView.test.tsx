@@ -478,28 +478,29 @@ describe("SessionArtifactsView", () => {
 		expect(openInBrowser).toHaveBeenCalledExactlyOnceWith("http://artifact.localhost/report.html");
 	});
 
-	it("reveals the open artifact in Finder and opens a page in the default browser", async () => {
-		const reveal = vi.spyOn(aoBridge.editorHandoff, "openArtifacts");
+	it("opens a page in the default browser from the file's menu", async () => {
 		const openExternal = vi.spyOn(aoBridge.editorHandoff, "openArtifactInBrowser");
 		renderView(<SessionArtifactsView session={session()} />);
 		await userEvent.click(screen.getByRole("button", { name: /^notes\.md/ }));
 		// A Markdown file is not one a browser renders.
-		expect(screen.queryByRole("button", { name: "Open in browser" })).not.toBeInTheDocument();
+		await userEvent.click(screen.getByRole("button", { name: "notes.md" }));
+		expect(screen.queryByRole("menuitem", { name: "Open in browser" })).not.toBeInTheDocument();
+		await userEvent.keyboard("{Escape}");
 		await userEvent.click(screen.getByRole("button", { name: "Back to artifacts" }));
 		await userEvent.click(screen.getByRole("button", { name: /^report\.html/ }));
-		// The file manager's name follows the platform.
-		await userEvent.click(screen.getByRole("button", { name: /^Open in (Finder|File Explorer|File Manager)$/ }));
-		await userEvent.click(screen.getByRole("button", { name: "Open in browser" }));
-		expect(reveal).toHaveBeenCalledExactlyOnceWith({ sessionId: "sess-1", targetId: "file-manager", path: "report.html" });
+		// The file's actions stay in its menu, not the header.
+		expect(screen.queryByRole("button", { name: "Open in browser" })).not.toBeInTheDocument();
+		await userEvent.click(screen.getByRole("button", { name: "report.html" }));
+		await userEvent.click(screen.getByRole("menuitem", { name: "Open in browser" }));
 		expect(openExternal).toHaveBeenCalledExactlyOnceWith({ sessionId: "sess-1", path: "report.html" });
-		reveal.mockRestore();
 		openExternal.mockRestore();
 	});
 
 	it("shows why the artifact could not open in the browser", async () => {
 		const openExternal = vi.spyOn(aoBridge.editorHandoff, "openArtifactInBrowser").mockRejectedValue(new Error("This file does not open in a browser."));
 		renderView(<SessionArtifactsView request={{ key: 1, path: "report.html" }} session={session()} />);
-		await userEvent.click(screen.getByRole("button", { name: "Open in browser" }));
+		await userEvent.click(screen.getByRole("button", { name: "report.html" }));
+		await userEvent.click(screen.getByRole("menuitem", { name: "Open in browser" }));
 		expect(await screen.findByRole("alert")).toHaveTextContent("This file does not open in a browser.");
 		openExternal.mockRestore();
 	});
