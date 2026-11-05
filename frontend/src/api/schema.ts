@@ -4230,23 +4230,6 @@ export interface paths {
         patch: operations["renameShellTerminal"];
         trace?: never;
     };
-    "/api/v1/shell-terminals/agents/events": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Stream the coding agents running inside shell terminals and their status */
-        get: operations["streamShellTerminalAgents"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/side-chats/launch/claim": {
         parameters: {
             query?: never;
@@ -7401,17 +7384,6 @@ export interface components {
             trackerIntakeEnabled: boolean;
             /** @description After a harness update, idle open sessions restart on the new release instead of running the old one until they happen to restart. */
             versionRefresh: boolean;
-        };
-        ShellTerminalAgentResponse: {
-            handleId: string;
-            harness: string;
-            /** Format: date-time */
-            since: string;
-            /** @enum {string} */
-            state: "working" | "idle" | "waiting";
-        };
-        ShellTerminalAgentsResponse: {
-            agents: components["schemas"]["ShellTerminalAgentResponse"][];
         };
         ShellTerminalEnvelope: {
             shellTerminal: components["schemas"]["ShellTerminalResponse"];
@@ -23878,35 +23850,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["APIError"];
-                };
-            };
-            /** @description Not Implemented */
-            501: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["APIError"];
-                };
-            };
-        };
-    };
-    streamShellTerminalAgents: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description OK */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "text/event-stream": components["schemas"]["ShellTerminalAgentsResponse"];
                 };
             };
             /** @description Not Implemented */
