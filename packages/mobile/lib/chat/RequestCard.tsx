@@ -1,7 +1,8 @@
 import { Feather } from "../icons";
-import { useCallback, useState } from "react";
-import { ActivityIndicator, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { useCallback, useState, type ReactNode } from "react";
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, TextInput, useWindowDimensions, View } from "react-native";
 import { Directions, Gesture, GestureDetector } from "react-native-gesture-handler";
+import { useKeyboardState } from "react-native-keyboard-controller";
 import Animated, { SlideInLeft, SlideInRight, SlideOutLeft, SlideOutRight } from "react-native-reanimated";
 
 import { haptics } from "../haptics";
@@ -11,7 +12,7 @@ import { useTheme, useThemedStyles } from "../ThemeProvider";
 import { textSelectionColors } from "../textSelection";
 import { fontScaleCap, space, type } from "../tokens";
 import { useReducedMotion } from "../useReducedMotion";
-import type { RequestDockModel, RequestDockPage } from "./requestDockModel";
+import { requestCardMaxHeight, type RequestDockModel, type RequestDockPage } from "./requestDockModel";
 import { userFacingError } from "../connectionError";
 
 /**
@@ -49,6 +50,14 @@ export function RequestCard({
 	// Which way the next page should travel: forward pages come in from the
 	// right, back pages from the left, so the motion agrees with the swipe.
 	const [forward, setForward] = useState(true);
+	// Whether the question runs past the scroll body, so the pinned answers
+	// below it get an edge to show there is more above.
+	const [bodyHeight, setBodyHeight] = useState(0);
+	const [contentHeight, setContentHeight] = useState(0);
+	const windowHeight = useWindowDimensions().height;
+	const keyboardHeight = useKeyboardState((state) => (state.isVisible ? state.height : 0));
+	const maxHeight = requestCardMaxHeight(windowHeight, keyboardHeight);
+	const clipped = bodyHeight > 0 && contentHeight > bodyHeight + 1;
 
 	const total = model.pages.length;
 	const current: RequestDockPage | undefined = model.pages[page];
@@ -111,22 +120,64 @@ export function RequestCard({
 		answer(current.freeText.numeric ? Number(typed) : typed, current.freeText.name);
 	};
 
+	const pinAnswers = model.kind === "approval";
+	const renderOptions = (pinned: boolean) => current.options.map((option, index) => {
+		// The answers were always kept — they accumulate until the last
+		// page submits them — but nothing said so on a second visit.
+		const selected = current.propertyName ? values[current.propertyName] === option.id : false;
+		return (
+			<Pressable
+				key={option.id}
+				accessibilityRole="button"
+				accessibilityLabel={option.label}
+				accessibilityState={{ disabled: busy, selected }}
+				disabled={busy}
+				onPress={() => { haptics.tap(); answer(option.id); }}
+				style={({ pressed }) => [styles.option, (index > 0 || (pinned && clipped)) && styles.optionDivider, pressed && styles.pressed, busy && styles.dim]}
+			>
+				<View style={[styles.ordinal, selected && styles.ordinalSelected]}>
+					{selected
+						? <Feather name="check" size={12} color={t.bgBase} />
+						: <Text maxFontSizeMultiplier={fontScaleCap.chrome} style={styles.ordinalText}>{index + 1}</Text>}
+				</View>
+				<View style={styles.optionBody}>
+					<Text maxFontSizeMultiplier={fontScaleCap.body} style={[styles.optionLabel, selected && styles.optionLabelSelected]}>{option.label}</Text>
+					{option.description ? <Text maxFontSizeMultiplier={fontScaleCap.body} style={styles.optionHint}>{option.description}</Text> : null}
+				</View>
+			</Pressable>
+		);
+	});
+
+	// The question scrolls inside the card; the header above it and the answers
+	// below it stay put, so a long command can never push them off screen.
+	const body = (children: ReactNode) => (
+		<ScrollView
+			key={model.sequence}
+			style={styles.body}
+			keyboardShouldPersistTaps="handled"
+			onLayout={(event) => setBodyHeight(event.nativeEvent.layout.height)}
+			onContentSizeChange={(_, height) => setContentHeight(height)}
+		>
+			{children}
+		</ScrollView>
+	);
+
 	// Deferred requests get a name and a way back to the card that owns them.
 	if (!model.canAnswerInline) {
 		return (
-			<View style={styles.card}>
+			<View style={[styles.card, { maxHeight }]}>
 				<View style={styles.head}>
 					<Text maxFontSizeMultiplier={fontScaleCap.chrome} style={styles.eyebrow}>{model.title}</Text>
 					<Pressable accessibilityRole="button" accessibilityLabel="Dismiss and type instead" hitSlop={10} onPress={() => { haptics.tap(); onDismiss(); }}>
 						<Feather name="x" size={17} color={t.textTertiary} />
 					</Pressable>
 				</View>
-				{current.question ? <Text maxFontSizeMultiplier={fontScaleCap.title} style={styles.question}>{current.question}</Text> : null}
+				{current.question ? body(<Text maxFontSizeMultiplier={fontScaleCap.title} style={styles.question}>{current.question}</Text>) : null}
 				<Pressable
 					accessibilityRole="button"
 					accessibilityLabel="Open the full request"
 					onPress={() => { haptics.tap(); onShow(model.sequence); }}
-					style={({ pressed }) => [styles.openForm, pressed && styles.pressed]}
+					style={({ pressed }) => [styles.openForm, clipped && styles.pinnedEdge, pressed && styles.pressed]}
 				>
 					<Feather name="arrow-up" size={15} color={t.accent} />
 					<Text maxFontSizeMultiplier={fontScaleCap.chrome} style={styles.openFormText}>Open the full request</Text>
@@ -137,7 +188,7 @@ export function RequestCard({
 
 	return (
 		<GestureDetector gesture={swipe}>
-			<View style={styles.card}>
+			<View style={[styles.card, { maxHeight }]}>
 				<View style={styles.head}>
 					{total > 1 ? <View style={styles.pager}>
 						<Pressable accessibilityRole="button" accessibilityLabel="Previous question" disabled={page === 0} hitSlop={10} onPress={() => goTo(page - 1)}>
@@ -172,39 +223,20 @@ export function RequestCard({
 
 				<Animated.View
 					key={page}
+					style={styles.page}
 					entering={reduceMotion ? undefined : (forward ? SlideInRight : SlideInLeft).duration(PAGE_SLIDE_MS)}
 					exiting={reduceMotion ? undefined : (forward ? SlideOutLeft : SlideOutRight).duration(PAGE_SLIDE_MS)}
 				>
-					{current.question ? <Text maxFontSizeMultiplier={fontScaleCap.title} style={styles.question}>{current.question}</Text> : null}
+					{/* An approval's decisions are the way out of the card, so they are
+					    pinned under the question. A question's options are its content and
+					    scroll with it; the typed answer stays pinned. */}
+					{body(<>
+						{current.question ? <Text maxFontSizeMultiplier={fontScaleCap.title} style={styles.question}>{current.question}</Text> : null}
+						{pinAnswers ? null : renderOptions(false)}
+					</>)}
+					{pinAnswers ? renderOptions(true) : null}
 
-					{current.options.map((option, index) => {
-						// The answers were always kept — they accumulate until the last
-						// page submits them — but nothing said so on a second visit.
-						const selected = current.propertyName ? values[current.propertyName] === option.id : false;
-						return (
-							<Pressable
-								key={option.id}
-								accessibilityRole="button"
-								accessibilityLabel={option.label}
-								accessibilityState={{ disabled: busy, selected }}
-								disabled={busy}
-								onPress={() => { haptics.tap(); answer(option.id); }}
-								style={({ pressed }) => [styles.option, index > 0 && styles.optionDivider, pressed && styles.pressed, busy && styles.dim]}
-							>
-								<View style={[styles.ordinal, selected && styles.ordinalSelected]}>
-									{selected
-										? <Feather name="check" size={12} color={t.bgBase} />
-										: <Text maxFontSizeMultiplier={fontScaleCap.chrome} style={styles.ordinalText}>{index + 1}</Text>}
-								</View>
-								<View style={styles.optionBody}>
-									<Text maxFontSizeMultiplier={fontScaleCap.body} style={[styles.optionLabel, selected && styles.optionLabelSelected]}>{option.label}</Text>
-									{option.description ? <Text maxFontSizeMultiplier={fontScaleCap.body} style={styles.optionHint}>{option.description}</Text> : null}
-								</View>
-							</Pressable>
-						);
-					})}
-
-					{current.freeText ? <View style={[styles.typed, current.options.length > 0 && styles.optionDivider]}>
+					{current.freeText ? <View style={[styles.typed, (current.options.length > 0 || clipped) && styles.optionDivider]}>
 						<View style={styles.ordinal}><Feather name="edit-2" size={12} color={t.textTertiary} /></View>
 						<TextInput
 							accessibilityLabel={current.freeText.placeholder}
@@ -255,6 +287,11 @@ const makeStyles = (t: Theme) =>
 			paddingBottom: space.xs,
 			overflow: "hidden",
 		},
+		page: { flexShrink: 1 },
+		// flexGrow 0 so a short question sizes to its text; flexShrink so a long
+		// one gives way first when the card reaches its cap.
+		body: { flexGrow: 0, flexShrink: 1 },
+		pinnedEdge: { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: t.borderSubtle },
 		head: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", minHeight: 26 },
 		pager: { flexDirection: "row", alignItems: "center", gap: space.sm },
 		pagerText: { fontFamily: "Geist_600SemiBold", color: t.textSecondary, fontSize: type.caption1.fontSize, fontWeight: "600", fontVariant: ["tabular-nums"] },
