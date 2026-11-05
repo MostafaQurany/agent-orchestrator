@@ -487,7 +487,8 @@ describe("SessionArtifactsView", () => {
 		expect(screen.queryByRole("button", { name: "Open in browser" })).not.toBeInTheDocument();
 		await userEvent.click(screen.getByRole("button", { name: "Back to artifacts" }));
 		await userEvent.click(screen.getByRole("button", { name: /^report\.html/ }));
-		await userEvent.click(screen.getByRole("button", { name: "Open in Finder" }));
+		// The file manager's name follows the platform.
+		await userEvent.click(screen.getByRole("button", { name: /^Open in (Finder|File Explorer|File Manager)$/ }));
 		await userEvent.click(screen.getByRole("button", { name: "Open in browser" }));
 		expect(reveal).toHaveBeenCalledExactlyOnceWith({ sessionId: "sess-1", targetId: "file-manager", path: "report.html" });
 		expect(openExternal).toHaveBeenCalledExactlyOnceWith({ sessionId: "sess-1", path: "report.html" });
